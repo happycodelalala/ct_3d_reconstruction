@@ -1,0 +1,69 @@
+# ── Dependencies ───────────────────────────────────────────────
+node_modules/
+.npm/
+.pnpm-store/
+
+# ── Build output ───────────────────────────────────────────────
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+# emitted by `tsc -b` (composite project)
+vite.config.js
+vite.config.d.ts
+
+# ── Python / uv (data pipelines) ───────────────────────────────
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# ── Medical imaging data: raw downloads & derived assets ───────
+# NOTE: CT data is large and (even when de-identified) is kept out of git.
+rawdata/
+nlst_data/
+nlst_seg/
+nlstseg_data/
+nlst_tp/
+nlst_aimi/
+public/data/
+
+# Safety net — never commit imaging / volume files wherever they land
+*.nii
+*.nii.gz
+*.dcm
+*.bin
+*.bin.gz
+*.zip
+*.tar
+*.tar.gz
+*.npy
+*.npz
+*.xlsx
+
+# ── Secrets / environment ──────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.json
+**/credentials*.json
+
+# ── Logs ───────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ── Editor / OS cruft ──────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
