@@ -1,6 +1,13 @@
 import { useEffect } from "react";
 import { useStore } from "../store";
 
+// Markers are centered on their position (translateX(-50%)), so end markers at
+// 0%/100% would overhang the track — the first colliding with the play button.
+// Inset the usable range; --mk-inset (defined on .track) is the single source of
+// truth for that inset, shared with the .track-line CSS.
+const markerLeft = (frac: number) =>
+  `calc(var(--mk-inset) + ${frac} * (100% - 2 * var(--mk-inset)))`;
+
 export default function Timeline() {
   const { real, timepoint, setTimepoint, playing, togglePlaying } = useStore();
   const tps = real?.timepoints ?? [];
@@ -21,7 +28,7 @@ export default function Timeline() {
         <button className="play-btn" disabled style={{ opacity: 0.4, cursor: "default" }}>▶</button>
         <div className="track">
           <div className="track-line" />
-          <button className="tp active" style={{ left: "0%" }}>
+          <button className="tp active" style={{ left: markerLeft(0) }}>
             <span className="dot" />
             <span className="tp-label">{tps[0]?.label ?? "—"}</span>
             <span className="tp-day">SINGLE ACQ</span>
@@ -42,21 +49,18 @@ export default function Timeline() {
       </button>
       <div className="track">
         <div className="track-line" />
-        {tps.map((tp, i) => {
-          const pct = (i / (tps.length - 1)) * 100;
-          return (
+        {tps.map((tp, i) => (
             <button
               key={tp.id}
               className={`tp ${i === timepoint ? "active" : ""}`}
-              style={{ left: `${pct}%` }}
+              style={{ left: markerLeft(i / (tps.length - 1)) }}
               onClick={() => setTimepoint(i)}
             >
               <span className="dot" />
               <span className="tp-label">{tp.label}</span>
               <span className="tp-day">T{i}</span>
             </button>
-          );
-        })}
+        ))}
       </div>
     </div>
   );

@@ -73,16 +73,57 @@ body {
   letter-spacing: 0.28em;
   color: var(--text-dim);
 }
-/* dataset switcher */
-.dataset-switch { display: flex; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); }
-.dataset-switch button {
-  font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em;
-  color: var(--text-dim); background: none; border: none; cursor: pointer;
-  padding: 7px 13px; border-radius: 4px; transition: all 0.16s ease; white-space: nowrap;
+/* patient picker (searchable, scales to many patients) */
+.picker { position: relative; }
+.picker-trigger {
+  display: flex; align-items: center; gap: 9px;
+  min-width: 240px; max-width: 340px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em;
+  color: var(--text); background: var(--panel-2); border: 1px solid var(--line);
+  cursor: pointer; padding: 8px 12px; border-radius: 6px; transition: all 0.16s ease;
 }
-.dataset-switch button:hover { color: var(--text); }
-.dataset-switch button.on { color: #06181a; background: var(--cyan); box-shadow: 0 0 14px rgba(56,225,214,0.35); }
-.dataset-switch button:disabled { cursor: default; }
+.picker-trigger:hover:not(:disabled) { border-color: var(--cyan-deep); }
+.picker-trigger.open { border-color: var(--cyan); box-shadow: 0 0 14px rgba(56,225,214,0.18); }
+.picker-trigger:disabled { cursor: default; color: var(--text-dim); }
+.picker-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); flex: none; }
+.picker-label { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker-count { color: var(--text-mute); font-size: 10px; }
+.picker-caret { color: var(--text-dim); font-size: 10px; }
+
+.picker-pop {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 50;
+  width: 360px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; box-shadow: 0 18px 44px rgba(0,0,0,0.55); overflow: hidden;
+}
+.picker-search {
+  width: 100%; box-sizing: border-box; border: none; outline: none;
+  background: var(--panel-2); color: var(--text);
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+  padding: 11px 13px; border-bottom: 1px solid var(--line);
+}
+.picker-search::placeholder { color: var(--text-mute); }
+.picker-list { max-height: 360px; overflow-y: auto; padding: 4px; }
+.picker-empty { padding: 16px; text-align: center; color: var(--text-mute); font-family: var(--mono); font-size: 11px; }
+.picker-row {
+  display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left;
+  background: none; border: none; cursor: pointer; padding: 8px 10px; border-radius: 5px;
+}
+.picker-row.active { background: var(--panel-2); }
+.picker-row.on { background: rgba(56,225,214,0.08); }
+.picker-row.on .picker-row-title { color: var(--cyan); }
+.picker-row-title { font-family: var(--cond); font-size: 13px; letter-spacing: 0.04em; color: var(--text); }
+.picker-row-tags { display: flex; gap: 5px; flex-wrap: wrap; }
+.ptag {
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--text-dim); background: var(--panel-2); border: 1px solid var(--line-soft);
+  padding: 1px 6px; border-radius: 3px;
+}
+.ptag.amber { color: var(--amber); border-color: var(--amber-deep); }
+.ptag.dim { color: var(--text-mute); }
+.picker-foot {
+  padding: 7px 12px; font-size: 9px; letter-spacing: 0.08em; color: var(--text-mute);
+  border-top: 1px solid var(--line); background: var(--panel-2);
+}
 .toggle:disabled { opacity: 0.35; cursor: default; }
 
 .load-error {
@@ -259,15 +300,20 @@ input[type="range"]::-moz-range-thumb {
 }
 .play-btn:hover { border-color: var(--cyan-deep); }
 .play-btn.on { background: rgba(56,225,214,0.1); border-color: var(--cyan); box-shadow: 0 0 14px rgba(56,225,214,0.3); }
-.track { position: relative; flex: 1; height: 44px; }
+/* --mk-inset: how far the end markers/line are inset from the track ends so the
+   first marker clears the play button. Single source of truth, also read by
+   markerLeft() in Timeline.tsx. */
+.track { position: relative; flex: 1; height: 44px; --mk-inset: 34px; }
 .track-line {
-  position: absolute; top: 11px; left: 0; right: 0; height: 2px;
+  position: absolute; top: 11px; left: var(--mk-inset); right: var(--mk-inset); height: 2px;
   background: linear-gradient(90deg, var(--line), var(--line-soft));
 }
 .tp {
   position: absolute; top: 0; transform: translateX(-50%);
   display: flex; flex-direction: column; align-items: center; gap: 3px;
   background: none; border: none; cursor: pointer; padding: 0;
+  /* size to content so end markers don't shrink-to-fit + wrap their date label */
+  width: max-content;
 }
 .tp .dot {
   width: 11px; height: 11px; border-radius: 50%;

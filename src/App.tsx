@@ -5,14 +5,14 @@ import MPRStrip from "./components/MPRStrip";
 import ControlRail from "./components/ControlRail";
 import StatsPanel from "./components/StatsPanel";
 import Timeline from "./components/Timeline";
+import PatientPicker from "./components/PatientPicker";
 import { useStore } from "./store";
-import { DATASETS } from "./lib/dataset";
 
 export default function App() {
-  const { real, loading, loadError, datasetId, loadDataset } = useStore();
+  const { real, loading, loadError, loadIndex } = useStore();
 
   useEffect(() => {
-    loadDataset(datasetId);
+    loadIndex();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -31,18 +31,7 @@ export default function App() {
           <span className="brand-sub">3D RECONSTRUCTION WORKSTATION</span>
         </div>
 
-        <div className="dataset-switch">
-          {DATASETS.map((d) => (
-            <button
-              key={d.id}
-              className={datasetId === d.id ? "on" : ""}
-              onClick={() => loadDataset(d.id)}
-              disabled={loading}
-            >
-              {loading && datasetId === d.id ? "LOADING…" : d.short}
-            </button>
-          ))}
-        </div>
+        <PatientPicker />
 
         <div className="topbar-meta">
           <Meta k="STUDY" v={m?.title ?? "—"} />

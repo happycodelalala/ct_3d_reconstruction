@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
@@ -10,6 +10,33 @@ import { renderReformat, realSampler, type PlaneBasis, type PlaneKind } from "..
 // Authored in normalized coordinates, then this group rotates the cranio-caudal
 // (z) axis to vertical so the body "stands up" in the scene.
 const TO_SCENE: [number, number, number] = [-Math.PI / 2, 0, 0];
+
+// Three.js never auto-frees imperatively-created geometries/textures (react-three-
+// fiber only disposes the ones declared as JSX), so each slice scrub or patient
+// switch that rebuilds a CanvasTexture/BufferGeometry would leak GPU memory until
+// the WebGL context is lost. Free each resource when React replaces it or unmounts
+// the owning component — the standard effect-cleanup pattern, keyed on identity.
+//
+// Disposing a Three object only releases its GPU handles; the CPU-side data stays,
+// so if StrictMode runs the cleanup an extra time in dev the object just re-uploads
+// on the next frame. No render-phase trickery needed.
+function disposeDeep(v: unknown): void {
+  if (!v || typeof v !== "object") return;
+  if (typeof (v as { dispose?: unknown }).dispose === "function") {
+    (v as { dispose: () => void }).dispose();
+    return; // a THREE object owns its internals — don't recurse past it
+  }
+  if (Array.isArray(v)) {
+    for (const x of v) disposeDeep(x);
+    return;
+  }
+  for (const k in v) disposeDeep((v as Record<string, unknown>)[k]);
+}
+
+function useDisposable<T>(value: T): T {
+  useEffect(() => () => disposeDeep(value), [value]);
+  return value;
+}
 
 function meshToGeometry(m: MeshData): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
@@ -34,18 +61,27 @@ function Scene() {
   const timepoint = useStore((s) => s.timepoint);
   const { showBody, showTumor } = useStore();
   const tp = real?.timepoints[timepoint];
-  const tumorGeo = useMemo(() => (tp?.tumorMesh ? meshToGeometry(tp.tumorMesh) : null), [tp]);
-  const organGeo = useMemo(() => (tp?.organMesh ? meshToGeometry(tp.organMesh) : null), [tp]);
+  const tumorGeo = useDisposable(useMemo(() => (tp?.tumorMesh ? meshToGeometry(tp.tumorMesh) : null), [tp]));
+  const organGeo = useDisposable(useMemo(() => (tp?.organMesh ? meshToGeometry(tp.organMesh) : null), [tp]));
   if (!real) return null;
   return (
     <group>
       {showBody && organGeo && (
         <>
-          <mesh geometry={organGeo}>
-            <meshStandardMaterial color={"#3a8294"} transparent opacity={0.18} roughness={0.7} side={THREE.DoubleSide} depthWrite={false} />
+          {/* Translucent organ shell. The previous DoubleSide + depthWrite:false
+              fill made apparent solidity depend on how many shell layers each ray
+              crossed, so it flipped between "solid" and "see-through wireframe" as
+              the camera orbited. FrontSide keeps the per-ray layer count ~constant,
+              and explicit renderOrder pins the blend order (alpha blending is
+              order-dependent) so the look is now stable from every angle. */}
+          <mesh geometry={organGeo} renderOrder={1}>
+            <meshStandardMaterial color={"#3a8294"} transparent opacity={0.3} roughness={0.7} side={THREE.FrontSide} depthWrite={false} />
           </mesh>
-          <mesh geometry={organGeo}>
-            <meshBasicMaterial color={"#4fa6b8"} wireframe transparent opacity={0.1} />
+          {/* Wireframe kept only as a faint surface texture — at grazing angles a
+              strong wireframe packs densely and reads as bare "geometry", so it
+              stays well below the fill to keep the shell looking filled at all angles. */}
+          <mesh geometry={organGeo} renderOrder={2}>
+            <meshBasicMaterial color={"#4fa6b8"} wireframe transparent opacity={0.05} side={THREE.FrontSide} depthWrite={false} />
           </mesh>
         </>
       )}
@@ -69,10 +105,10 @@ function Scene() {
 function CutPlane() {
   const tp = useTP();
   const { slice, window, level, showCutPlane, showTumor } = useStore();
-  const tex = useMemo(
+  const tex = useDisposable(useMemo(
     () => (tp ? makeRealSliceTexture(tp.ct, tp.seg, tp.manifest, slice, { window, level, showTumor }) : null),
     [tp, slice, window, level, showTumor]
-  );
+  ));
   if (!tp || !showCutPlane || !tex) return null;
   const m = tp.manifest;
   return <SlicePlane z={sliceWorldZ(slice, m)} w={2 * m.worldExtent[0]} h={2 * m.worldExtent[1]} tex={tex} />;
@@ -91,6 +127,7 @@ function LayerStack() {
       out.push({ z: sliceWorldZ(k, m), tex: makeRealSliceTexture(tp.ct, tp.seg, m, k, { window, level, showTumor }) });
     return out;
   }, [tp, showLayers, window, level, showTumor]);
+  useDisposable(layers); // frees the per-layer CanvasTextures when the stack rebuilds
   if (!tp || !showLayers) return null;
   const m = tp.manifest;
   return <LayerMeshes layers={layers} w={2 * m.worldExtent[0]} h={2 * m.worldExtent[1]} />;
@@ -113,13 +150,13 @@ function buildQuad(b: PlaneBasis): THREE.BufferGeometry {
 
 function MPRQuad({ kind, color, tp }: { kind: PlaneKind; color: string; tp: NonNullable<ReturnType<typeof useTP>> }) {
   const { window, level, showTumor, crossX, crossY, slice, sliceMax, obliqueAngle } = useStore();
-  const { tex, geo, edges } = useMemo(() => {
+  const { tex, geo, edges } = useDisposable(useMemo(() => {
     const cross = { x: crossX, y: crossY, z: slice / sliceMax };
     const { sampler, ext } = realSampler(tp.ct, tp.seg, tp.manifest, window, level);
     const rf = renderReformat(kind, sampler, ext, cross, { angleDeg: obliqueAngle, showTumor, base: 200, transparentAir: true });
     const geo = buildQuad(rf.basis);
     return { tex: imageToTexture(rf.img, false), geo, edges: new THREE.EdgesGeometry(geo) };
-  }, [kind, tp, window, level, showTumor, crossX, crossY, slice, sliceMax, obliqueAngle]);
+  }, [kind, tp, window, level, showTumor, crossX, crossY, slice, sliceMax, obliqueAngle]));
 
   return (
     <group>
@@ -147,7 +184,7 @@ function MPRBox() {
 
 /* ------------------------------- shared bits ------------------------------ */
 function SlicePlane({ z, w, h, tex }: { z: number; w: number; h: number; tex: THREE.Texture }) {
-  const edge = useMemo(() => new THREE.PlaneGeometry(w, h), [w, h]);
+  const edge = useDisposable(useMemo(() => new THREE.PlaneGeometry(w, h), [w, h]));
   return (
     <group>
       <mesh position={[0, 0, z]}>
@@ -189,7 +226,7 @@ function Rig({ children }: { children: React.ReactNode }) {
 }
 
 function BoundingCage({ ext }: { ext: [number, number, number] }) {
-  const geo = useMemo(() => new THREE.BoxGeometry(2 * ext[0], 2 * ext[1], 2 * ext[2]), [ext]);
+  const geo = useDisposable(useMemo(() => new THREE.BoxGeometry(2 * ext[0], 2 * ext[1], 2 * ext[2]), [ext]));
   return (
     <lineSegments>
       <edgesGeometry args={[geo]} />

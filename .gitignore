@@ -67,3 +67,6 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# e2e test artifacts
+e2e_shots/

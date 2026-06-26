@@ -1,7 +1,9 @@
 import { create } from "zustand";
-import { loadDataset, DATASETS, type RealDataset } from "./lib/dataset";
+import { loadDataset as fetchDataset, loadIndex as fetchIndex, type DatasetEntry, type RealDataset } from "./lib/dataset";
 
 interface AppState {
+  datasets: DatasetEntry[];
+  indexLoaded: boolean;
   datasetId: string;
   real: RealDataset | null;
   loading: boolean;
@@ -23,6 +25,7 @@ interface AppState {
   showMPRPlanes: boolean;
   autoRotate: boolean;
 
+  loadIndex: () => void;
   loadDataset: (id: string) => void;
   setTimepoint: (t: number) => void;
   togglePlaying: () => void;
@@ -33,7 +36,9 @@ interface AppState {
 }
 
 export const useStore = create<AppState>((set, get) => ({
-  datasetId: DATASETS[0].id,
+  datasets: [],
+  indexLoaded: false,
+  datasetId: "",
   real: null,
   loading: false,
   loadError: null,
@@ -54,10 +59,24 @@ export const useStore = create<AppState>((set, get) => ({
   showMPRPlanes: false,
   autoRotate: true,
 
+  loadIndex: () => {
+    fetchIndex()
+      .then((datasets) => {
+        set({ datasets, indexLoaded: true });
+        if (datasets.length) get().loadDataset(datasets[0].id);
+        else set({ loadError: "no datasets in index — run `npm run data:index`" });
+      })
+      .catch((e) => set({ indexLoaded: true, loadError: String(e?.message || e) }));
+  },
   loadDataset: (id) => {
     if (get().loading) return;
+    const entry = get().datasets.find((d) => d.id === id);
+    if (!entry) {
+      set({ loadError: `unknown dataset ${id}` });
+      return;
+    }
     set({ datasetId: id, loading: true, loadError: null, real: null, playing: false });
-    loadDataset(id)
+    fetchDataset(entry.base)
       .then((real) =>
         set({
           real,
