@@ -137,7 +137,7 @@ writes `public/data/<id>/`. Python pipelines use a `uv` environment:
 
 ```bash
 uv venv .venv
-uv pip install --python .venv idc-index pydicom nibabel numpy scikit-image remotezip openpyxl
+uv pip install --python .venv idc-index pydicom nibabel numpy scipy scikit-image remotezip openpyxl rt-utils
 ```
 
 ### 1. KiTS19 — kidney + tumour (NIfTI, Node)
@@ -206,6 +206,37 @@ PY
 between the NLSTseg-NIfTI and IDC-DICOM screens is verified consistent), threshold-
 segments the lung envelope on each, and meshes the expert tumour at the 2000 screen.
 
+### 4. Head & neck — 3D tumour from a single annotated slice (DICOM + RTSTRUCT)
+
+For a clinical RT export (a CT DICOM series + a DICOM **RTSTRUCT** whose tumour ROI
+is contoured on just **one** axial slice), `preprocess_hn.py` rasterizes the contour
+(via `rt-utils`, aligned to the CT series) and propagates that single slice into a
+full 3D tumour mask, then meshes it like any other dataset:
+
+```bash
+.venv/bin/python scripts/preprocess_hn.py \
+    --dicom /path/to/CT_dicom_dir --rtstruct /path/to/rtstruct.dcm --roi GTV
+npm run data:index          # add it to the patient picker
+```
+
+Two propagation modes:
+
+- **`--mode geometric`** *(default)* — models the tumour as roughly ellipsoidal and
+  tapers the real contour toward zero over a z-extent derived from its in-plane size
+  (override with `--z-span-mm`). Uses only the contour shape, so it never leaks or
+  inflates — the right choice for CT-only H&N, where the tumour is often iso-dense
+  with surrounding muscle.
+- **`--mode intensity`** — HU region-grow bounded per slice; better for clearly
+  contrast-distinct tumours, but can inflate on iso-dense tissue.
+
+> **Rough visualization only.** A single CT slice carries no real information about
+> how the tumour changes shape above/below it, so this is a plausible envelope for
+> the 3D view, **not** a measurement-grade contour. It assumes the annotated slice is
+> near the tumour's largest cross-section. For accurate H&N GTV you need PET/CT or
+> human-in-the-loop tools (3D Slicer + MONAI Label / nnInteractive / MedSAM2); the
+> script's propagation step is deliberately isolated so a learned mask can drop into
+> the same meshing/manifest path later.
+
 ---
 
 ## Project layout
@@ -230,6 +261,8 @@ scripts/
   preprocess.cjs          KiTS:  NIfTI -> assets (Node: nifti-reader-js + isosurface)
   preprocess_nlst.py      NLST:  DICOM -> assets (Python: pydicom + scikit-image)
   preprocess_nlst_tumor.py NLSTseg: NIfTI+DICOM -> assets (Python: nibabel + pydicom + skimage)
+  preprocess_hn.py        H&N:   DICOM+RTSTRUCT -> assets (Python: rt-utils); a single-slice
+                          contour auto-propagated to a rough 3D tumour envelope
 ```
 
 To add a dataset: write a preprocessing script that emits the unified `manifest.json`
