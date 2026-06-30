@@ -211,7 +211,8 @@ segments the lung envelope on each, and meshes the expert tumour at the 2000 scr
 For a clinical RT export (a CT DICOM series + a DICOM **RTSTRUCT** whose tumour ROI
 is contoured on just **one** axial slice), `preprocess_hn.py` rasterizes the contour
 (via `rt-utils`, aligned to the CT series) and propagates that single slice into a
-full 3D tumour mask, then meshes it like any other dataset:
+full 3D tumour mask, then meshes it like any other dataset. **Full method:**
+[docs/head-and-neck-segmentation.md](docs/head-and-neck-segmentation.md).
 
 ```bash
 .venv/bin/python scripts/preprocess_hn.py \
