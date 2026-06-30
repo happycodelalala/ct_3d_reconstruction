@@ -8,11 +8,14 @@ measurement-grade contour (see caveats in the README).
 Pipeline:
   1. rt-utils rasterizes the RTSTRUCT contour onto the CT grid (mask aligned to
      the sorted CT series by construction — no orientation guesswork).
-  2. The single annotated slice is propagated up/down the stack by intensity-
-     guided, spatially-bounded region growing that tapers off where the tumour
-     ends — fully automatic, no per-case interaction.
-  3. Largest connected component + marching cubes -> mesh, emitted in the same
-     normalized world space + asset/manifest format as the other datasets.
+  2. The single annotated slice is propagated up/down the stack into a 3D mask,
+     fully automatic (no per-case interaction). Two modes:
+       geometric (default) — ellipsoidal taper of the real contour; robust on
+                             CT-only H&N, where intensity can't separate the
+                             iso-dense tumour from surrounding muscle.
+       intensity (opt-in)  — HU region-grow, for contrast-distinct tumours.
+  3. Marching cubes -> mesh, emitted in the same normalized world space +
+     asset/manifest format as the other datasets.
 
     .venv/bin/python scripts/preprocess_hn.py \
         --dicom /path/to/CT_dicom_dir --rtstruct /path/to/rtstruct.dcm [--roi GTV]
