@@ -47,13 +47,19 @@ function meshToGeometry(m: MeshData): THREE.BufferGeometry {
   return g;
 }
 
-// current timepoint's voxel data
+// current timepoint's voxel data. Memoized so the returned object keeps a stable
+// identity across renders that don't change the dataset/timepoint — a fresh literal
+// here would invalidate every downstream useMemo (slice textures, reformats) on any
+// unrelated store change (e.g. dragging the crosshair), re-uploading GPU textures
+// each time despite nothing they depend on having changed.
 function useTP() {
   const real = useStore((s) => s.real);
   const timepoint = useStore((s) => s.timepoint);
-  if (!real) return null;
-  const tp = real.timepoints[timepoint];
-  return { ct: tp.ct, seg: tp.seg, manifest: real.manifest, real };
+  return useMemo(() => {
+    if (!real) return null;
+    const tp = real.timepoints[timepoint];
+    return { ct: tp.ct, seg: tp.seg, manifest: real.manifest, real };
+  }, [real, timepoint]);
 }
 
 function Scene() {
@@ -160,8 +166,15 @@ function MPRQuad({ kind, color, tp }: { kind: PlaneKind; color: string; tp: NonN
 
   return (
     <group>
+      {/* The coronal & sagittal quads intersect, so they must resolve front/back
+          PER PIXEL, not per object. depthWrite must stay on for that; alphaTest
+          discards the transparent-air fragments (binary alpha from shade()) so
+          they don't write depth and punch holes — that cutout is why depthWrite
+          was originally off. Without this, whichever quad draws last always wins
+          the crossing region (both centroids coincide, so the transparent sort
+          is a tie), regardless of which is actually in front. */}
       <mesh geometry={geo}>
-        <meshBasicMaterial map={tex} transparent opacity={0.92} side={THREE.DoubleSide} depthWrite={false} />
+        <meshBasicMaterial map={tex} transparent opacity={0.92} alphaTest={0.5} side={THREE.DoubleSide} />
       </mesh>
       <lineSegments geometry={edges}>
         <lineBasicMaterial color={color} transparent opacity={0.55} />

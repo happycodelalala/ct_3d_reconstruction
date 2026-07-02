@@ -19,9 +19,15 @@ export default function MPRStrip() {
   const obliqueAngle = useStore((s) => s.obliqueAngle);
   const real = useStore((s) => s.real);
   const timepoint = useStore((s) => s.timepoint);
-  if (!real) return null;
-  const tp = real.timepoints[timepoint];
-  const data: TPData = { ct: tp.ct, seg: tp.seg, manifest: real.manifest };
+  const tp = real?.timepoints[timepoint];
+  // Stable identity (keyed on dataset/timepoint) so the reformat useMemos in the
+  // tiles below aren't invalidated by a fresh object every render — same reason as
+  // useTP() in Viewer3D.
+  const data = useMemo<TPData | null>(
+    () => (real && tp ? { ct: tp.ct, seg: tp.seg, manifest: real.manifest } : null),
+    [real, tp]
+  );
+  if (!data) return null;
 
   return (
     <section className="mpr">
