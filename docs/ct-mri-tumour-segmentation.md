@@ -142,7 +142,7 @@ available sequences + CT as channels.
 | Tier | Method | Trade-off |
 |---|---|---|
 | **Classical, MR-guided** *(no learned model)* | region-grow on T2/DWI seeded by a contour, bounded in 3D | keeps "no inference in the loop"; transparent; lower ceiling, can leak on oedema |
-| **Interactive foundation model** ⭐ *(recommended)* | MedSAM2 / nnInteractive on the co-registered MR — a few prompts → real 3D mask | best quality-for-effort; **human verifies each case** (stays honest); needs GPU (on AMD hardware that's **ROCm/PyTorch**) |
+| **Interactive foundation model** ⭐ *(recommended)* | MedSAM2 / nnInteractive on the co-registered MR — a few prompts → real 3D mask | best quality-for-effort; **human verifies each case** (stays honest); needs a GPU — runs on the remote CUDA server (§4.5) |
 | **Automatic multimodal** | CT+MR channels → a pretrained/trained nnU-Net (HECKTOR-style) | fully automatic, highest ceiling; needs paired training data + a validation set; black-box |
 
 **Recommendation:** the interactive tier (MedSAM2 / nnInteractive) on the MR — genuine
@@ -192,7 +192,52 @@ train/fine-tune; there is no pretrained CT+MR-fused H&N tumour model to grab. So
 practice: **MedSAM2 interactively on the MR** now, or a **channel-fused nnU-Net** once you
 have paired training data. Either way, our registration (§3) is the enabler.
 
-### 4.5 The integration point (unchanged)
+### 4.5 In our setting: sparse seeds, no labels, GPU server
+
+Our real constraints differ from the generic tiers above and pin down a specific recipe:
+
+- **No dense pixel labels; one annotated slice per patient, inconsistently placed.** The
+  slice is a **prompt/seed, never training data** — fine-tuning on it would overfit to
+  annotation noise. This rules out supervised / channel-fusion *training* (§4.4).
+- **A remote NVIDIA GPU server (A100-class) handles processing.** Learned inference is cheap,
+  so the compute is best spent on **label-free robustness**, not on a training step we can't do.
+
+**How to combine CT and MRI — asymmetric, at inference (not fused-and-trained):**
+
+| Modality | Role |
+|---|---|
+| **MRI** | defines the tumour boundary — the only modality with the soft-tissue contrast |
+| **CT** | constrains (exclude bone/air via HU or TotalSegmentator) + RT geometry + fusion QA |
+| **Seed slice** | the prompt, and the only per-patient ground truth → QA anchor |
+
+The registration (§3) also **transfers the seed** from wherever it was drawn (often the CT)
+into MR space, so the tumour can be prompted on the MR where it is actually visible.
+
+**Recommended recipe (offline batch on the server):**
+
+1. Register CT↔MR; transfer the seed into MR space.
+2. **Prompt-segment on the MR** with a promptable foundation model (MedSAM2 — built for
+   single-slice→3D propagation, sequence-agnostic, so robust to whatever MR you have).
+3. **Ensemble + multi-prompt consensus.** Run several models (MedSAM2 ± SAM-Med3D) and/or
+   jitter the seed + augmentations N times; fuse by voting/STAPLE. The spread gives a
+   **per-voxel uncertainty map** — turning the brittleness of one inconsistent slice into a
+   measurable confidence envelope. This is what the GPU compute is for, given no labels.
+4. **CT-constrain:** reject mask voxels that fall in bone/air.
+5. Transfer the mask to CT space → existing build (§4.6, §5).
+
+**Architecture.** Segmentation is an **offline GPU preprocessing job** on the remote server,
+*not* in the browser — it emits the 3D mask, and `preprocess_hn_mri.py` + the CT/MR/fusion
+viewer are unchanged. Batch the whole cohort in one run.
+
+**Don't:** fine-tune / test-time-train on the seed, or channel-fuse-and-train — compute
+doesn't fix label noise; keep fusion and robustness at **inference** (ensemble + multi-prompt
++ CT constraint), not in the weights.
+
+> *The one label-free "training" the GPU server does enable (optional, bigger effort):*
+> self-supervised pretraining (contrastive/MAE) or CT↔MR modality translation on the
+> **unlabelled paired** cohort — worth it only if the promptable ensemble plateaus.
+
+### 4.6 The integration point (unchanged)
 
 Whatever tier you pick, the contract is identical to the CT-only path
 ([§10 there](head-and-neck-segmentation.md#10-extending-toward-real-segmentation)):
@@ -245,7 +290,8 @@ npm run data:index
 
 1. **Align** MR → CT (`register_ct_mr.py`); **inspect the QA** (checkerboard + mandible
    contour) before trusting it.
-2. **Segment** the tumour on the MR (interactive MedSAM2 / nnInteractive on T1-C), verify.
+2. **Segment** on the MR — seed → MedSAM2 with multi-prompt / ensemble **consensus +
+   uncertainty** (§4.5), offline on the GPU server; verify against the seed slice.
 3. **Transfer** the mask to CT space with the registration transform.
 4. **Build** the dataset (`preprocess_hn_mri.py`) and view CT / MR / fusion in the app.
 
@@ -267,7 +313,10 @@ npm run data:index
 - **No fused pretrained tumour model exists.** Off-the-shelf models are single-modality
   or modality-agnostic; a true CT+MR-fused H&N GTV model must be trained (channel fusion)
   — until then, interactive (MedSAM2) is the realistic route. See §4.4.
-- **GPU:** learned segmentation is PyTorch — on AMD hardware target **ROCm**, not CUDA.
+- **GPU:** learned segmentation runs as an offline batch on the **remote NVIDIA (CUDA)
+  processing server**; the local dev machine (AMD/ROCm) only runs the browser app, so ROCm
+  isn't on the critical path. Spend the GPU on inference-time ensembling/uncertainty (§4.5),
+  not on training you can't do without labels.
 
 ---
 
