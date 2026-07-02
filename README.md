@@ -244,7 +244,9 @@ Two propagation modes:
 
 Paired head & neck **CT + T1 MR** (+ organ-at-risk masks), openly downloadable from
 Zenodo (no account). This exercises the **CT+MRI** path: register the MR onto the CT,
-carry *both* volumes in one grid, and fuse them in the workstation.
+carry *both* volumes in one grid, and fuse them in the workstation. **Full method (how
+to align CT↔MRI and segment the tumour with both):**
+[docs/ct-mri-tumour-segmentation.md](docs/ct-mri-tumour-segmentation.md).
 
 ```bash
 mkdir -p hanseg_data

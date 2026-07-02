@@ -284,6 +284,10 @@ The propagation step is intentionally the **only** tumour-specific part; everyth
 downstream (resample → window → mesh → manifest) is generic. To upgrade quality, replace
 *just* the function that produces the 3D mask:
 
+- **CT + MRI available *(preferred whenever an MR exists)*:** register the MR to the CT
+  and segment on the MR's soft-tissue contrast — MRI resolves the CT iso-density that
+  makes this single-slice method necessary in the first place. Full method (alignment +
+  segmentation): [**CT + MRI Tumour Segmentation & Fusion**](ct-mri-tumour-segmentation.md).
 - **Human-in-the-loop:** 3D Slicer + MONAI Label, `nnInteractive`, or MedSAM2 — annotate
   one slice and propagate/refine interactively, export a 3D mask (NIfTI), then feed it
   through the meshing path.
