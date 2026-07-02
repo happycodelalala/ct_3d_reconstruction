@@ -70,6 +70,8 @@ export default function ControlRail() {
   const hasOrgan = tps.some((t) => t.organMesh);
   const organLabel = m?.labels?.["1"] ? `${m.labels["1"].toUpperCase()} ENVELOPE` : "ORGAN ENVELOPE";
   const hasMri = !!tps[s.timepoint]?.mri;
+  // the W/L sliders act on whichever volume is displayed, so the title tracks it
+  const winTitle = `${MODES.find((x) => x.m === s.displayModality)?.label ?? "CT"} WINDOWING`;
   return (
     <aside className="rail">
       {hasMri && (
@@ -111,7 +113,7 @@ export default function ControlRail() {
       </div>
 
       <div className="rail-group">
-        <div className="rail-title">CT WINDOWING</div>
+        <div className="rail-title">{winTitle}</div>
         <Slider
           label="WINDOW WIDTH"
           value={s.window}

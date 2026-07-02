@@ -53,7 +53,7 @@ export default function CTPanel() {
   return (
     <section className="ct-panel" aria-label="Original CT projection">
       <header className="panel-head">
-        <span className="panel-kicker">SOURCE · AXIAL CT</span>
+        <span className="panel-kicker">SOURCE · AXIAL {mode === "mri" ? "MR" : mode === "fusion" ? "CT+MR" : "CT"}</span>
         <span className="panel-tag">{recon}</span>
       </header>
 
