@@ -149,7 +149,50 @@ available sequences + CT as channels.
 3D quality with a human in the loop, no bespoke training. Keep the classical grow as a
 no-GPU fallback; reserve automatic nnU-Net for when you have paired CT+MR training data.
 
-### 4.3 The integration point (unchanged)
+### 4.3 What "good" looks like — benchmarks
+
+Reference scores from public challenges (mean Dice; calibration, not promises — verify
+before quoting formally):
+
+| Challenge | Modality | Target | Top Dice | Note |
+|---|---|---|---|---|
+| **HECKTOR 2022** | PET/CT | H&N GTVp / GTVn | ≈0.80 / 0.78 (winner aggregate ≈0.77) | *the* H&N tumour benchmark — but PET/CT, not CT+MR |
+| **HNTS-MRG 2024** | T2 MR only | H&N GTVp+n | **0.825** pre-RT · **0.733** mid-RT | top methods *beat clinician inter-observer* |
+| **HaN-Seg 2023** | CT + MR | 30 H&N OARs | ≈0.77 mean | only CT+MR H&N challenge — organs, not tumour |
+
+A realistic target for a real H&N tumour mask is **~0.75–0.83 Dice (at/above
+inter-observer)** — versus our geometric envelope, which is not measurement-grade at all.
+
+> **The catch that matters here:** the big *tumour* benchmarks are **single-modality by
+> design** (HECKTOR = PET/CT, HNTS-MRG = T2-MR). There is **no public CT+MR-*fused* H&N GTV
+> benchmark**, and — below — no off-the-shelf pretrained model for it either.
+
+### 4.4 Pretrained models to reach for
+
+**Tumour:**
+
+| Model | Kind | CT / MR | Use |
+|---|---|---|---|
+| **MedSAM2** ⭐ | promptable 3D foundation (open weights) | CT + MR + PET | prompt on the MR → 3D mask; the recommended interactive path |
+| **SAM-Med3D**, **SegVol** | promptable 3D universal | CT (+MR) | alternatives; SegVol adds text prompts (CT-centric) |
+| **nnU-Net** + **HECKTOR** / **HNTS-MRG** winner weights | automatic, task-specific | PET/CT or T2-MR | strong automatic baselines; single-modality inputs |
+
+**Organ / body envelope** — the app's "organ envelope" layer (today a CT threshold):
+
+| Model | CT / MR | Note |
+|---|---|---|
+| **TotalSegmentator** | CT **and** MR | 100+ structures + a **`body` task** (trunk / skin) — a direct drop-in for the envelope mesh, far better than thresholding |
+| **TotalSegmentator MRI** | MR (+CT) | 80 structures, sequence-independent, Dice ≈0.86 |
+| **MRSegmentator** | MR + CT | 40 classes |
+
+**"Multi-modality" ≠ "CT+MR fused."** Almost every model above is modality-*agnostic* (runs
+on CT *or* MR), not jointly fused. To actually fuse both for the tumour you do **input-level
+fusion** — register (→ §3), then stack CT + MR as **nnU-Net input channels** and
+train/fine-tune; there is no pretrained CT+MR-fused H&N tumour model to grab. So in
+practice: **MedSAM2 interactively on the MR** now, or a **channel-fused nnU-Net** once you
+have paired training data. Either way, our registration (§3) is the enabler.
+
+### 4.5 The integration point (unchanged)
 
 Whatever tier you pick, the contract is identical to the CT-only path
 ([§10 there](head-and-neck-segmentation.md#10-extending-toward-real-segmentation)):
@@ -206,6 +249,10 @@ npm run data:index
 3. **Transfer** the mask to CT space with the registration transform.
 4. **Build** the dataset (`preprocess_hn_mri.py`) and view CT / MR / fusion in the app.
 
+> **Organ / body envelope (optional):** for the app's envelope layer, prefer
+> **TotalSegmentator** (§4.4) on the CT or MR over an intensity threshold — it drops into
+> the same meshing path and is a large quality upgrade for little effort.
+
 ---
 
 ## 7. Limitations & honest notes
@@ -217,7 +264,25 @@ npm run data:index
   deformable registration reshape the lesion to match the metric.
 - **Interactive ≠ automatic.** The recommended path keeps a human verifying each mask —
   honest, but not hands-off. Automatic nnU-Net needs paired CT+MR training + validation.
+- **No fused pretrained tumour model exists.** Off-the-shelf models are single-modality
+  or modality-agnostic; a true CT+MR-fused H&N GTV model must be trained (channel fusion)
+  — until then, interactive (MedSAM2) is the realistic route. See §4.4.
 - **GPU:** learned segmentation is PyTorch — on AMD hardware target **ROCm**, not CUDA.
+
+---
+
+## 8. Benchmarks & models — sources
+
+Numbers in §4.3–4.4 are challenge/paper-reported (verify before formal use):
+
+- HECKTOR 2022 (PET/CT H&N GTV): <https://pmc.ncbi.nlm.nih.gov/articles/PMC10171217/>
+- HNTS-MRG 2024 (T2-MR H&N GTV): <https://arxiv.org/abs/2411.18585>
+- HaN-Seg 2023 challenge (CT+MR OARs): <https://han-seg2023.grand-challenge.org/official-results-of-the-han-seg-challenge/>
+- TotalSegmentator (CT & MR, incl. `body`): <https://github.com/wasserth/TotalSegmentator>
+- TotalSegmentator MRI: <https://arxiv.org/abs/2405.19492>
+- MRSegmentator: <https://arxiv.org/abs/2405.06463>
+- MedSAM2: <https://arxiv.org/abs/2504.03600>
+- SegVol: <https://arxiv.org/abs/2311.13385> · SAM-Med3D: <https://arxiv.org/abs/2310.15161>
 
 ---
 
