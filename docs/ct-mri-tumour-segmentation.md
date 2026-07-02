@@ -213,17 +213,32 @@ Our real constraints differ from the generic tiers above and pin down a specific
 The registration (§3) also **transfers the seed** from wherever it was drawn (often the CT)
 into MR space, so the tumour can be prompted on the MR where it is actually visible.
 
-**Recommended recipe (offline batch on the server):**
+**Recommended recipe (offline batch on the server)** — refined per the evidence below:
 
 1. Register CT↔MR; transfer the seed into MR space.
-2. **Prompt-segment on the MR** with a promptable foundation model (MedSAM2 — built for
-   single-slice→3D propagation, sequence-agnostic, so robust to whatever MR you have).
-3. **Ensemble + multi-prompt consensus.** Run several models (MedSAM2 ± SAM-Med3D) and/or
-   jitter the seed + augmentations N times; fuse by voting/STAPLE. The spread gives a
-   **per-voxel uncertainty map** — turning the brittleness of one inconsistent slice into a
-   measurable confidence envelope. This is what the GPU compute is for, given no labels.
-4. **CT-constrain:** reject mask voxels that fall in bone/air.
-5. Transfer the mask to CT space → existing build (§4.6, §5).
+2. **Prompt-segment on the MR** with MedSAM2 — feed the seed as a **mask prompt, not just a
+   box** (a direct precedent reports ≈0.71 vs 0.57 Dice for mask vs box). It propagates the
+   mask bidirectionally through the volume via SAM2 memory attention (single-slice→3D).
+3. **Re-prompt center-outward.** SAM2 propagation *drifts* from an off-centre prompt, and our
+   seed slice is inconsistently placed — so after a first pass, re-prompt from the
+   **auto-detected largest-area slice** and propagate outward from there (the documented
+   most-stable strategy). Don't propagate blindly from the raw seed.
+4. **Ensemble + multi-prompt consensus + uncertainty.** Jitter the prompt + augmentations N
+   times (± SAM-Med3D); fuse by voting/STAPLE → a mask **and a per-voxel uncertainty map**.
+   This is a published technique that also *raises* DSC (SAM-U / UR-SAM: +10–14%), and it
+   turns the brittleness of one inconsistent slice into measurable confidence.
+5. **CT-constrain:** reject mask voxels that fall in bone/air.
+6. Transfer the mask to CT space → existing build (§4.6, §5).
+
+**Verified expectations — assisted, not automatic.** The closest published precedent
+(zero-shot SAM2 on 3D breast-MRI tumours, single-slice prompt) reaches **Dice ≈0.57 box /
+0.71 mask**, and H&N GTV evaluations place foundation models **below nnU-Net's clinical
+reliability** (benchmark ~0.75–0.83, §4.3). So this recipe yields a **GTVp-focused,
+human-verified rough 3D envelope + uncertainty** — a clear upgrade over the geometric taper,
+**not** a measurement-grade contour. Two documented failure modes to design around:
+**drift on off-centre prompts** (→ step 3's center-outward re-prompt) and **scattered small
+lesions / nodal disease (GTVn)**, where propagation loses coherence (→ segment the primary
+mass, handle nodes separately and flag them low-confidence via the uncertainty map).
 
 **Architecture.** Segmentation is an **offline GPU preprocessing job** on the remote server,
 *not* in the browser — it emits the 3D mask, and `preprocess_hn_mri.py` + the CT/MR/fusion
@@ -308,8 +323,14 @@ npm run data:index
   motion between scans; if neck/jaw position differs a lot, add a masked deformable step.
 - **Don't deform the tumour.** Segment in MR space and transfer the mask; never let a
   deformable registration reshape the lesion to match the metric.
-- **Interactive ≠ automatic.** The recommended path keeps a human verifying each mask —
-  honest, but not hands-off. Automatic nnU-Net needs paired CT+MR training + validation.
+- **Interactive ≠ automatic, and expect ~0.6–0.7 Dice.** Zero-shot foundation models sit
+  *below* nnU-Net's clinical reliability for H&N GTV (direct precedent: SAM2 on 3D tumour MRI
+  ≈0.57 box / 0.71 mask; §4.5). This is an assisted, human-verified **rough envelope**, not a
+  measurement-grade contour — the uncertainty map tells the human where to look.
+- **Propagation drifts; nodes fragment.** SAM2-family propagation drifts from off-centre
+  prompts and loses coherence on scattered small lesions — mitigate with center-outward
+  re-prompting and by handling GTVn separately (§4.5). Automatic nnU-Net needs paired CT+MR
+  training + validation, which we don't have.
 - **No fused pretrained tumour model exists.** Off-the-shelf models are single-modality
   or modality-agnostic; a true CT+MR-fused H&N GTV model must be trained (channel fusion)
   — until then, interactive (MedSAM2) is the realistic route. See §4.4.
@@ -332,6 +353,13 @@ Numbers in §4.3–4.4 are challenge/paper-reported (verify before formal use):
 - MRSegmentator: <https://arxiv.org/abs/2405.06463>
 - MedSAM2: <https://arxiv.org/abs/2504.03600>
 - SegVol: <https://arxiv.org/abs/2311.13385> · SAM-Med3D: <https://arxiv.org/abs/2310.15161>
+
+Verification of the §4.5 recipe (single-slice prompt → 3D propagation, drift, uncertainty):
+
+- SAM2 on 3D tumour MRI, single-slice prompt (≈0.57 box / 0.71 mask, center-outward best): <https://arxiv.org/abs/2507.23272>
+- SAM2 3D propagation drift / failure modes: <https://arxiv.org/abs/2510.08967>
+- Prompt-perturbation uncertainty (SAM-U): <https://arxiv.org/abs/2307.04973> · UR-SAM: <https://arxiv.org/abs/2311.10529>
+- Foundation models for H&N tumour — below nnU-Net reliability: <https://arxiv.org/abs/2402.17454>
 
 ---
 
