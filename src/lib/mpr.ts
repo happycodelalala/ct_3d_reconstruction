@@ -2,7 +2,7 @@
 // oblique projections, plus a maximum-intensity projection (MIP), via a common
 // world-space sampler over the loaded volume.
 
-import type { Manifest } from "./dataset";
+import { srcLum01, type DisplayMode, type Manifest } from "./dataset";
 
 export type PlaneKind = "coronal" | "sagittal" | "oblique";
 
@@ -21,10 +21,12 @@ export function realSampler(
   seg: Uint8Array | undefined,
   manifest: Manifest,
   window: number,
-  level: number
+  level: number,
+  disp?: { mri?: Uint8Array; mode?: DisplayMode; fusion?: number }
 ): { sampler: Sampler; ext: [number, number, number] } {
   const [X, Y, Z] = manifest.dims;
   const ext = manifest.worldExtent;
+  const mri = disp?.mri, mode = disp?.mode, fusion = disp?.fusion;
   const sampler: Sampler = (wx, wy, wz) => {
     const ox = Math.round(((wx / (2 * ext[0])) + 0.5) * (X - 1));
     const oy = Math.round(((wy / (2 * ext[1])) + 0.5) * (Y - 1));
@@ -32,7 +34,7 @@ export function realSampler(
     if (ox < 0 || oy < 0 || k < 0 || ox >= X || oy >= Y || k >= Z)
       return { lum: 6, label: 0 };
     const vi = ox + X * (oy + Y * k);
-    return { lum: windowLum(ct[vi] / 255, level, window), label: seg ? seg[vi] : 0 };
+    return { lum: windowLum(srcLum01(ct, mri, vi, mode, fusion), level, window), label: seg ? seg[vi] : 0 };
   };
   return { sampler, ext };
 }

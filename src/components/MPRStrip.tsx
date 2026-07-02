@@ -11,6 +11,7 @@ const PLANES: { kind: PlaneKind; label: string }[] = [
 
 interface TPData {
   ct: Uint8Array;
+  mri?: Uint8Array;
   seg?: Uint8Array;
   manifest: Manifest;
 }
@@ -24,7 +25,7 @@ export default function MPRStrip() {
   // tiles below aren't invalidated by a fresh object every render — same reason as
   // useTP() in Viewer3D.
   const data = useMemo<TPData | null>(
-    () => (real && tp ? { ct: tp.ct, seg: tp.seg, manifest: real.manifest } : null),
+    () => (real && tp ? { ct: tp.ct, mri: tp.mri, seg: tp.seg, manifest: real.manifest } : null),
     [real, tp]
   );
   if (!data) return null;
@@ -60,14 +61,16 @@ export default function MPRStrip() {
 function ProjectionTile({ kind, label, data }: { kind: PlaneKind; label: string; data: TPData }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const { window, level, showTumor, crossX, crossY, slice, sliceMax, obliqueAngle, setSlice, set } =
-    useStore();
+  const { window, level, showTumor, crossX, crossY, slice, sliceMax, obliqueAngle, setSlice, set,
+    displayModality, fusionAlpha } = useStore();
+  const mode = data.mri ? displayModality : "ct";
 
   const result = useMemo(() => {
     const cross = { x: crossX, y: crossY, z: slice / sliceMax };
-    const { sampler, ext } = realSampler(data.ct, data.seg, data.manifest, window, level);
+    const { sampler, ext } = realSampler(data.ct, data.seg, data.manifest, window, level,
+      { mri: data.mri, mode, fusion: fusionAlpha });
     return renderReformat(kind, sampler, ext, cross, { angleDeg: obliqueAngle, showTumor, base: 224 });
-  }, [kind, data, window, level, showTumor, crossX, crossY, slice, sliceMax, obliqueAngle]);
+  }, [kind, data, window, level, showTumor, crossX, crossY, slice, sliceMax, obliqueAngle, mode, fusionAlpha]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -113,12 +116,15 @@ function ProjectionTile({ kind, label, data }: { kind: PlaneKind; label: string;
 function MIPTile({ data }: { data: TPData }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const { window, level, showTumor, crossX, slice, sliceMax, setSlice, set } = useStore();
+  const { window, level, showTumor, crossX, slice, sliceMax, setSlice, set,
+    displayModality, fusionAlpha } = useStore();
+  const mode = data.mri ? displayModality : "ct";
 
   const result = useMemo(() => {
-    const { sampler, ext } = realSampler(data.ct, data.seg, data.manifest, window, level);
+    const { sampler, ext } = realSampler(data.ct, data.seg, data.manifest, window, level,
+      { mri: data.mri, mode, fusion: fusionAlpha });
     return renderMIP(sampler, ext, { x: 0.5, y: 0.5, z: 0.5 }, { showTumor, base: 224 });
-  }, [data, window, level, showTumor]);
+  }, [data, window, level, showTumor, mode, fusionAlpha]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

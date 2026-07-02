@@ -1,4 +1,11 @@
 import { useStore } from "../store";
+import type { DisplayMode } from "../lib/dataset";
+
+const MODES: { m: DisplayMode; label: string }[] = [
+  { m: "ct", label: "CT" },
+  { m: "mri", label: "MR" },
+  { m: "fusion", label: "FUSION" },
+];
 
 function Toggle({
   label,
@@ -62,8 +69,37 @@ export default function ControlRail() {
   const hasTumor = tps.some((t) => t.tumorMesh);
   const hasOrgan = tps.some((t) => t.organMesh);
   const organLabel = m?.labels?.["1"] ? `${m.labels["1"].toUpperCase()} ENVELOPE` : "ORGAN ENVELOPE";
+  const hasMri = !!tps[s.timepoint]?.mri;
   return (
     <aside className="rail">
+      {hasMri && (
+        <div className="rail-group">
+          <div className="rail-title">MODALITY</div>
+          <div className="seg-row">
+            {MODES.map(({ m: mo, label }) => (
+              <button
+                key={mo}
+                className={`seg ${s.displayModality === mo ? "on" : ""}`}
+                onClick={() => s.setDisplayMode(mo)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {s.displayModality === "fusion" && (
+            <Slider
+              label="CT ↔ MR BLEND"
+              value={s.fusionAlpha}
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={(v) => s.set({ fusionAlpha: v })}
+              display={`${Math.round(s.fusionAlpha * 100)}% MR`}
+            />
+          )}
+        </div>
+      )}
+
       <div className="rail-group">
         <div className="rail-title">RENDER LAYERS</div>
         <Toggle label="TUMOUR SEGMENTATION" active={s.showTumor && hasTumor} disabled={!hasTumor} onClick={() => s.set({ showTumor: !s.showTumor })} />

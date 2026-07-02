@@ -11,6 +11,7 @@ export interface Manifest {
   worldExtent: [number, number, number]; // half-width per axis
   spacingMm: [number, number, number];
   defaultWL: { window: number; level: number };
+  mriWL?: { window: number; level: number }; // default W/L when the MR is shown
   hasSegmentation: boolean;
   labels: Record<string, string> | null;
   clinicalNote?: string;
@@ -18,6 +19,7 @@ export interface Manifest {
     id: string;
     label: string;
     ct: string;
+    mri?: string; // second volume, registered into the same grid (CT+MRI datasets)
     seg?: string;
     tumorMesh?: string;
     organMesh?: string;
@@ -46,11 +48,15 @@ export interface Timepoint {
   id: string;
   label: string;
   ct: Uint8Array;
+  mri?: Uint8Array; // registered second volume, same grid as ct (optional)
   seg?: Uint8Array;
   tumorMesh?: MeshData;
   organMesh?: MeshData;
   lungVolumeCm3?: number;
 }
+
+// Which volume the 2D/3D renderers draw from. "fusion" blends CT+MR.
+export type DisplayMode = "ct" | "mri" | "fusion";
 
 export interface RealDataset {
   manifest: Manifest;
@@ -117,6 +123,7 @@ export async function loadDataset(base: string): Promise<RealDataset> {
       label: tp.label,
       lungVolumeCm3: tp.lungVolumeCm3,
       ct: await fetchGzBin(`${base}/${tp.ct}`),
+      mri: tp.mri ? await fetchGzBin(`${base}/${tp.mri}`) : undefined,
       seg: tp.seg ? await fetchGzBin(`${base}/${tp.seg}`) : undefined,
       tumorMesh: tp.tumorMesh ? await fetchMesh(`${base}/${tp.tumorMesh}`) : undefined,
       organMesh: tp.organMesh ? await fetchMesh(`${base}/${tp.organMesh}`) : undefined,
@@ -140,14 +147,32 @@ export function sliceWorldZ(k: number, m: Manifest): number {
   return voxelToWorld(k, 2, m);
 }
 
+// Per-voxel source luminance (0..1) for the active display mode: CT, MR, or a
+// linear CT/MR blend (fusion). Shared by the axial renderer and the MPR sampler
+// so every view fuses identically.
+export function srcLum01(
+  ct: Uint8Array,
+  mri: Uint8Array | undefined,
+  vi: number,
+  mode: DisplayMode = "ct",
+  fusion = 0.5
+): number {
+  if (mode === "mri" && mri) return mri[vi] / 255;
+  if (mode === "fusion" && mri) return (ct[vi] / 255) * (1 - fusion) + (mri[vi] / 255) * fusion;
+  return ct[vi] / 255;
+}
+
 // Render one axial slice (constant Z = k) to ImageData, with optional contrast
-// re-windowing on the already-8bit CT and a seg overlay (when seg present).
+// re-windowing on the already-8bit volume(s) and a seg overlay (when seg present).
 export function renderRealSlice(
   ct: Uint8Array,
   seg: Uint8Array | undefined,
   m: Manifest,
   k: number,
-  opts: { window: number; level: number; showTumor: boolean; transparentAir?: boolean }
+  opts: {
+    window: number; level: number; showTumor: boolean; transparentAir?: boolean;
+    mri?: Uint8Array; mode?: DisplayMode; fusion?: number;
+  }
 ): ImageData {
   const [X, Y] = m.dims;
   const img = new ImageData(X, Y);
@@ -160,7 +185,8 @@ export function renderRealSlice(
     const cy = Y - 1 - oy; // flip so +Y is up
     for (let ox = 0; ox < X; ox++) {
       const vi = ox + X * (oy + Y * k);
-      const lum = Math.max(0, Math.min(255, Math.round((ct[vi] / 255 - lo) * inv * 255)));
+      const src = srcLum01(ct, opts.mri, vi, opts.mode, opts.fusion);
+      const lum = Math.max(0, Math.min(255, Math.round((src - lo) * inv * 255)));
       const label = seg ? seg[vi] : 0;
       let r = lum, g = lum, b = lum, a = 255;
       if (lum <= 2 && opts.transparentAir) a = 0;

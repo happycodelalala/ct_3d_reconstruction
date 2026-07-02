@@ -63,7 +63,9 @@ use Node (KiTS) and Python via **uv** (NLST).
 
 - **Left rail** — render-layer toggles (tumour segmentation, organ envelope, synced
   cut-plane, MPR ortho box, multi-layer slice stack, auto-orbit) and CT windowing
-  (window width / level). Toggles auto-disable when a dataset lacks that layer.
+  (window width / level). Toggles auto-disable when a dataset lacks that layer. For
+  **CT+MRI datasets** a **CT / MR / FUSION** modality switch appears (with a CT↔MR
+  blend slider); every 2D/3D view re-renders from the chosen volume.
 - **Centre — the reconstruction.** Orbit with the mouse (multi-angle). The amber
   isosurface is the tumour; the teal surface is the organ envelope. A glowing cyan
   plane is the **active axial slice**; it tracks the CT panel. **MPR ORTHO BOX**
@@ -238,6 +240,37 @@ Two propagation modes:
 > script's propagation step is deliberately isolated so a learned mask can drop into
 > the same meshing/manifest path later.
 
+### 5. HaN-Seg — CT + MRI fusion (NRRD, Python / SimpleITK)
+
+Paired head & neck **CT + T1 MR** (+ organ-at-risk masks), openly downloadable from
+Zenodo (no account). This exercises the **CT+MRI** path: register the MR onto the CT,
+carry *both* volumes in one grid, and fuse them in the workstation.
+
+```bash
+mkdir -p hanseg_data
+curl -L "https://zenodo.org/records/7442914/files/HaN-Seg.zip?download=1" -o hanseg_data/HaN-Seg.zip
+.venv/bin/python -c "import zipfile; zipfile.ZipFile('hanseg_data/HaN-Seg.zip').extractall('hanseg_data')"
+uv pip install --python .venv SimpleITK scikit-image
+
+# (optional) sanity-check the MR->CT registration on one case (writes QA overlays)
+.venv/bin/python scripts/register_ct_mr.py --case-dir hanseg_data/HaN-Seg/set_1/case_01
+
+# build a CT+MR dataset — the mandible OAR stands in for the tumour
+.venv/bin/python scripts/preprocess_hn_mri.py --case-dir hanseg_data/HaN-Seg/set_1/case_01
+npm run data:index
+```
+
+`register_ct_mr.py` aligns MR→CT with Mattes mutual information (a coarse
+cranio-caudal seed → rigid+affine, line-search optimiser + never-regress guard —
+robust to HaN-Seg's differing CT/MR frames and FOV). `preprocess_hn_mri.py`
+resamples the CT, the registered MR, and a chosen OAR (default: **mandible, as a
+tumour stand-in** — HaN-Seg ships no GTV) into one shared grid, and emits the unified
+assets with a second `mri` volume per timepoint. Swap the OAR for a real tumour mask
+later; nothing downstream changes.
+
+> **Licensing:** HaN-Seg is CC-BY-NC-ND — keep raw and derived assets local (both are
+> gitignored). Do not redistribute processed assets.
+
 ---
 
 ## Project layout
@@ -264,6 +297,8 @@ scripts/
   preprocess_nlst_tumor.py NLSTseg: NIfTI+DICOM -> assets (Python: nibabel + pydicom + skimage)
   preprocess_hn.py        H&N:   DICOM+RTSTRUCT -> assets (Python: rt-utils); a single-slice
                           contour auto-propagated to a rough 3D tumour envelope
+  register_ct_mr.py       HaN-Seg: validate MR->CT registration (SimpleITK MI, rigid+affine)
+  preprocess_hn_mri.py    HaN-Seg: CT+MR -> assets carrying BOTH volumes (fusion) + OAR-as-tumour mesh
 ```
 
 To add a dataset: write a preprocessing script that emits the unified `manifest.json`

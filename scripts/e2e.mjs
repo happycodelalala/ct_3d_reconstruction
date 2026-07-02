@@ -78,7 +78,10 @@ try {
     return el && !/LOADING|SELECT|NO PATIENTS/.test(el.textContent);
   }, { timeout: 20000 });
   ok(true, `picker shows current patient: "${await txt(page, ".picker-label")}"`);
-  ok((await txt(page, ".picker-count")) === "3", "picker count badge = 3 patients");
+  // Count is data-dependent (public/data is gitignored + optional pipelines like
+  // HaN-Seg add datasets), so derive the expected number from the index itself.
+  const nDatasets = await fetch(`${ORIGIN}/data/index.json`).then((r) => r.json()).then((j) => j.datasets.length).catch(() => 0);
+  ok((await txt(page, ".picker-count")) === String(nDatasets), `picker count badge = ${nDatasets} patients`);
   ok(/SEGMENTED|REAL/.test((await txt(page, ".meta-v.accent")) ?? ""), "STATUS meta populated (dataset really loaded)");
   ok(!!(await page.$("canvas")), "3D <canvas> mounted");
   await page.screenshot({ path: path.join(SHOTS, "01_loaded.png") });
@@ -86,7 +89,7 @@ try {
   console.log("\n2) open picker → all patients listed");
   await page.click(".picker-trigger");
   await page.waitForSelector(".picker-pop", { timeout: 5000 });
-  ok((await page.$$eval(".picker-row", (e) => e.length)) === 3, "popup lists 3 patient rows");
+  ok((await page.$$eval(".picker-row", (e) => e.length)) === nDatasets, `popup lists ${nDatasets} patient rows`);
   await page.screenshot({ path: path.join(SHOTS, "02_open.png") });
 
   console.log("\n3) search filters the list");

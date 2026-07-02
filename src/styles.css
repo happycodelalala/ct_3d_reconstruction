@@ -192,6 +192,23 @@ body {
 .toggle.on { color: #e7f4f4; border-color: rgba(56,225,214,0.35); background: rgba(56,225,214,0.05); }
 .toggle.on .toggle-dot { background: var(--cyan); box-shadow: 0 0 9px 1px rgba(56,225,214,0.8); }
 
+/* segmented modality switch (CT / MR / FUSION) */
+.seg-row { display: flex; gap: 4px; }
+.seg {
+  flex: 1;
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10px; letter-spacing: 0.12em;
+  padding: 7px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+.seg:hover { border-color: var(--line); color: var(--text); }
+.seg.on { color: #e7f4f4; border-color: rgba(56,225,214,0.45); background: rgba(56,225,214,0.09); }
+
 .rail-slider { display: flex; flex-direction: column; gap: 7px; padding: 4px 0; }
 .rail-slider-head {
   display: flex; justify-content: space-between;

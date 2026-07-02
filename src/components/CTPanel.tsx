@@ -7,16 +7,18 @@ const SIZE = 360;
 export default function CTPanel() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
-  const { slice, window, level, showTumor, setSlice, sliceMax, real, timepoint, crossX, crossY, set } =
-    useStore();
+  const { slice, window, level, showTumor, setSlice, sliceMax, real, timepoint, crossX, crossY, set,
+    displayModality, fusionAlpha } = useStore();
   const tp = real?.timepoints[timepoint];
+  const mode = tp?.mri ? displayModality : "ct";
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !real || !tp) return;
     const ctx = canvas.getContext("2d")!;
     const [X, Y] = real.manifest.dims;
-    const img = renderRealSlice(tp.ct, tp.seg, real.manifest, slice, { window, level, showTumor });
+    const img = renderRealSlice(tp.ct, tp.seg, real.manifest, slice,
+      { window, level, showTumor, mri: tp.mri, mode, fusion: fusionAlpha });
     const tmp = document.createElement("canvas");
     tmp.width = X; tmp.height = Y;
     tmp.getContext("2d")!.putImageData(img, 0, 0);
@@ -24,7 +26,7 @@ export default function CTPanel() {
     ctx.imageSmoothingEnabled = true;
     ctx.clearRect(0, 0, SIZE, SIZE);
     ctx.drawImage(tmp, 0, 0, SIZE, SIZE);
-  }, [slice, window, level, showTumor, real, tp]);
+  }, [slice, window, level, showTumor, real, tp, mode, fusionAlpha]);
 
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault();

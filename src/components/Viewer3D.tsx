@@ -58,7 +58,7 @@ function useTP() {
   return useMemo(() => {
     if (!real) return null;
     const tp = real.timepoints[timepoint];
-    return { ct: tp.ct, seg: tp.seg, manifest: real.manifest, real };
+    return { ct: tp.ct, mri: tp.mri, seg: tp.seg, manifest: real.manifest, real };
   }, [real, timepoint]);
 }
 
@@ -110,10 +110,11 @@ function Scene() {
 
 function CutPlane() {
   const tp = useTP();
-  const { slice, window, level, showCutPlane, showTumor } = useStore();
+  const { slice, window, level, showCutPlane, showTumor, displayModality, fusionAlpha } = useStore();
+  const mode = tp?.mri ? displayModality : "ct";
   const tex = useDisposable(useMemo(
-    () => (tp ? makeRealSliceTexture(tp.ct, tp.seg, tp.manifest, slice, { window, level, showTumor }) : null),
-    [tp, slice, window, level, showTumor]
+    () => (tp ? makeRealSliceTexture(tp.ct, tp.seg, tp.manifest, slice, { window, level, showTumor, mri: tp.mri, mode, fusion: fusionAlpha }) : null),
+    [tp, slice, window, level, showTumor, mode, fusionAlpha]
   ));
   if (!tp || !showCutPlane || !tex) return null;
   const m = tp.manifest;
@@ -122,7 +123,8 @@ function CutPlane() {
 
 function LayerStack() {
   const tp = useTP();
-  const { showLayers, window, level, showTumor } = useStore();
+  const { showLayers, window, level, showTumor, displayModality, fusionAlpha } = useStore();
+  const mode = tp?.mri ? displayModality : "ct";
   const layers = useMemo(() => {
     if (!tp || !showLayers) return [];
     const m = tp.manifest;
@@ -130,9 +132,9 @@ function LayerStack() {
     const Z = m.dims[2];
     const step = Math.max(8, Math.round(Z / 22));
     for (let k = step; k < Z - step; k += step)
-      out.push({ z: sliceWorldZ(k, m), tex: makeRealSliceTexture(tp.ct, tp.seg, m, k, { window, level, showTumor }) });
+      out.push({ z: sliceWorldZ(k, m), tex: makeRealSliceTexture(tp.ct, tp.seg, m, k, { window, level, showTumor, mri: tp.mri, mode, fusion: fusionAlpha }) });
     return out;
-  }, [tp, showLayers, window, level, showTumor]);
+  }, [tp, showLayers, window, level, showTumor, mode, fusionAlpha]);
   useDisposable(layers); // frees the per-layer CanvasTextures when the stack rebuilds
   if (!tp || !showLayers) return null;
   const m = tp.manifest;
@@ -155,14 +157,15 @@ function buildQuad(b: PlaneBasis): THREE.BufferGeometry {
 }
 
 function MPRQuad({ kind, color, tp }: { kind: PlaneKind; color: string; tp: NonNullable<ReturnType<typeof useTP>> }) {
-  const { window, level, showTumor, crossX, crossY, slice, sliceMax, obliqueAngle } = useStore();
+  const { window, level, showTumor, crossX, crossY, slice, sliceMax, obliqueAngle, displayModality, fusionAlpha } = useStore();
+  const mode = tp.mri ? displayModality : "ct";
   const { tex, geo, edges } = useDisposable(useMemo(() => {
     const cross = { x: crossX, y: crossY, z: slice / sliceMax };
-    const { sampler, ext } = realSampler(tp.ct, tp.seg, tp.manifest, window, level);
+    const { sampler, ext } = realSampler(tp.ct, tp.seg, tp.manifest, window, level, { mri: tp.mri, mode, fusion: fusionAlpha });
     const rf = renderReformat(kind, sampler, ext, cross, { angleDeg: obliqueAngle, showTumor, base: 200, transparentAir: true });
     const geo = buildQuad(rf.basis);
     return { tex: imageToTexture(rf.img, false), geo, edges: new THREE.EdgesGeometry(geo) };
-  }, [kind, tp, window, level, showTumor, crossX, crossY, slice, sliceMax, obliqueAngle]));
+  }, [kind, tp, window, level, showTumor, crossX, crossY, slice, sliceMax, obliqueAngle, mode, fusionAlpha]));
 
   return (
     <group>

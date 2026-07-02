@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { loadDataset as fetchDataset, loadIndex as fetchIndex, type DatasetEntry, type RealDataset } from "./lib/dataset";
+import { loadDataset as fetchDataset, loadIndex as fetchIndex, type DatasetEntry, type DisplayMode, type RealDataset } from "./lib/dataset";
 
 interface AppState {
   datasets: DatasetEntry[];
@@ -18,6 +18,8 @@ interface AppState {
   obliqueAngle: number;
   window: number;
   level: number;
+  displayModality: DisplayMode; // ct | mri | fusion (mri/fusion only when tp.mri present)
+  fusionAlpha: number; // 0 = all CT, 1 = all MR (fusion mode)
   showTumor: boolean;
   showBody: boolean; // organ envelope (kidney)
   showLayers: boolean;
@@ -32,6 +34,7 @@ interface AppState {
   setSlice: (s: number) => void;
   setWindow: (w: number) => void;
   setLevel: (l: number) => void;
+  setDisplayMode: (m: DisplayMode) => void;
   set: (patch: Partial<AppState>) => void;
 }
 
@@ -52,6 +55,8 @@ export const useStore = create<AppState>((set, get) => ({
   obliqueAngle: 35,
   window: 0.85,
   level: 0.5,
+  displayModality: "ct",
+  fusionAlpha: 0.5,
   showTumor: true,
   showBody: true,
   showLayers: false,
@@ -82,6 +87,7 @@ export const useStore = create<AppState>((set, get) => ({
           real,
           loading: false,
           timepoint: 0,
+          displayModality: "ct", // reset — new dataset may not have an MR
           sliceMax: real.manifest.dims[2] - 1,
           slice: Math.round(real.manifest.dims[2] / 2),
           window: real.manifest.defaultWL.window,
@@ -96,5 +102,12 @@ export const useStore = create<AppState>((set, get) => ({
   setSlice: (s) => set((st) => ({ slice: Math.max(0, Math.min(st.sliceMax, s)) })),
   setWindow: (w) => set({ window: w }),
   setLevel: (l) => set({ level: l }),
+  // switching modality also loads that modality's default W/L (the MR is stored
+  // pre-windowed, so it wants its own level/width).
+  setDisplayMode: (m) =>
+    set((st) => {
+      const wl = m === "mri" ? st.real?.manifest.mriWL ?? st.real?.manifest.defaultWL : st.real?.manifest.defaultWL;
+      return { displayModality: m, ...(wl ? { window: wl.window, level: wl.level } : {}) };
+    }),
   set: (patch) => set(patch),
 }));
