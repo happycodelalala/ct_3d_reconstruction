@@ -27,11 +27,13 @@ nlst_seg/
 nlstseg_data/
 nlst_tp/
 nlst_aimi/
+hanseg_data/
 public/data/
 
 # Safety net — never commit imaging / volume files wherever they land
 *.nii
 *.nii.gz
+*.nrrd
 *.dcm
 *.bin
 *.bin.gz
