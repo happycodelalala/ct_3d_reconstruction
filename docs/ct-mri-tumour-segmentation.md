@@ -252,6 +252,11 @@ doesn't fix label noise; keep fusion and robustness at **inference** (ensemble +
 > self-supervised pretraining (contrastive/MAE) or CT↔MR modality translation on the
 > **unlabelled paired** cohort — worth it only if the promptable ensemble plateaus.
 
+**First experiment (planned):** validate this recipe's *mechanism* on real 3D ground truth
+using the HaN-Seg **mandible as a stand-in target** (one slice → propagate → Dice vs the full
+mask) before trusting it on unlabelled tumours — see
+[MedSAM2 seed-test plan](medsam2-seed-test-plan.md).
+
 ### 4.6 The integration point (unchanged)
 
 Whatever tier you pick, the contract is identical to the CT-only path
