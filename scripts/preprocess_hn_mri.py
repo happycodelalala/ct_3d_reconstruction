@@ -95,7 +95,6 @@ def build(case_dir, out_dir, ds_id, title, roi_glob, roi_label):
     print(f"[{ds_id}] registering MR -> CT…")
     tx, mi_naive, mi_after = register(ct, mr)
     print(f"    MI {mi_naive:.4f} -> {mi_after:.4f}")
-    mr_in_ct = sitk.Resample(mr, ct, tx, sitk.sitkLinear, 0.0, sitk.sitkFloat32)
 
     # stand-in "tumour" mask (an OAR, defined on the CT grid)
     cand = glob.glob(os.path.join(case_dir, roi_glob))
@@ -119,7 +118,10 @@ def build(case_dir, out_dir, ds_id, title, roi_glob, roi_label):
     # resample everything into the shared output grid
     ref, out_size, out_spacing = output_grid(ct)
     ct_u8 = window_ct_u8(to_zyx(sitk.Resample(ct, ref, sitk.Transform(), sitk.sitkLinear, 0.0, sitk.sitkFloat32)))
-    mr_u8 = window_mr_u8(to_zyx(sitk.Resample(mr_in_ct, ref, sitk.Transform(), sitk.sitkLinear, 0.0, sitk.sitkFloat32)))
+    # MR straight into the output grid via the registration transform (ref shares the
+    # CT's physical space) — one interpolation, not a second pass through a full-res
+    # CT-grid intermediate.
+    mr_u8 = window_mr_u8(to_zyx(sitk.Resample(mr, ref, tx, sitk.sitkLinear, 0.0, sitk.sitkFloat32)))
     mask_out = to_zyx(sitk.Resample(man, ref, sitk.Transform(), sitk.sitkNearestNeighbor, 0, sitk.sitkUInt8)) > 0
     if mask_out.sum() == 0:
         raise SystemExit("mask empty after resample — check the ROI/params")
