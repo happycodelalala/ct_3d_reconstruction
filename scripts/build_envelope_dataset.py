@@ -30,8 +30,8 @@ from register_ct_mr import register_cached, load_ct_mr
 from preprocess_hn_mri import (output_grid, to_zyx, window_ct_u8, window_mr_u8,
                                mesh_from_mask, OUT_XY, CT_HU_LO, CT_HU_HI)
 
-LABELS = {"1": "body envelope", "2": "tumour envelope", "3": "organ envelope"}
-LABEL_COLORS = {"1": [90, 140, 200], "2": [255, 150, 70], "3": [150, 110, 205]}
+LABELS = {"1": "body envelope", "2": "tumour envelope", "3": "organ envelope", "4": "bone envelope"}
+LABEL_COLORS = {"1": [90, 140, 200], "2": [255, 150, 70], "3": [150, 110, 205], "4": [222, 216, 198]}
 
 
 def body_mask(ct_hu_zyx):
@@ -55,6 +55,7 @@ def main():
     ap = argparse.ArgumentParser(description="Build a body+tumour+organ multi-label dataset.")
     ap.add_argument("--case-dir", required=True)
     ap.add_argument("--tumour", required=True, help="tumour-envelope NRRD on the CT grid (triage output)")
+    ap.add_argument("--bone-hu", type=float, default=200.0, help="CT HU threshold for the bone layer")
     ap.add_argument("--id", default=None)
     ap.add_argument("--title", default=None)
     a = ap.parse_args()
@@ -73,16 +74,20 @@ def main():
     ct_u8 = window_ct_u8(ct_hu)
     mr_u8 = window_mr_u8(to_zyx(sitk.Resample(mr, ref, tx, sitk.sitkLinear, 0.0, sitk.sitkFloat32)))
 
-    # three envelope layers
+    # envelope layers
     body = body_mask(ct_hu)
+    bone = (ct_hu > a.bone_hu) & body           # skeleton = dense CT inside the body
     tumour = _to_grid(a.tumour, ref)
     organ = np.zeros(body.shape, bool)
     for f in sorted(glob.glob(os.path.join(a.case_dir, "*OAR_*.nrrd"))):
         organ |= _to_grid(f, ref)
 
-    # paint most-specific last so it wins shared voxels: body < organ < tumour
+    # one label per voxel: paint most-specific last so it wins shared voxels
+    # (body < bone < organ < tumour). 3D meshes are built per-layer from the full masks,
+    # so each shell still toggles independently regardless of this 2D precedence.
     seg = np.zeros(body.shape, np.uint8)
     seg[body] = 1
+    seg[bone] = 4
     seg[organ] = 3
     seg[tumour] = 2
 
@@ -93,7 +98,7 @@ def main():
     # coarser marching-cubes step for the big body shell (context only) than for the
     # small, detail-worthy tumour / organ layers — keeps body.json from ballooning.
     for lab, mask, fname, step in ((1, body, "body.json", 3), (2, tumour, "tumor.json", 1),
-                                   (3, organ, "organ.json", 1)):
+                                   (3, organ, "organ.json", 1), (4, bone, "bone.json", 2)):
         mesh, nv, nf = mesh_from_mask(mask, ext, step=step)
         json.dump(mesh, open(os.path.join(out_dir, fname), "w"))
         meshes.append({"label": lab, "file": fname})
