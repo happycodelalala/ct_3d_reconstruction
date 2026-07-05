@@ -22,10 +22,10 @@ import os
 
 import numpy as np
 from scipy.stats import rankdata
-from scipy.ndimage import distance_transform_edt
 
-# reuse the validated segmentation engine (setup + one-seed propagation)
+# reuse the validated segmentation engine + the shared recall-safe primitive
 from medsam2_seed_test import prepare_case, segment, dice
+from triage_pipeline import recall_safe_envelopes
 
 
 def sampled_seed_slices(gt_full, k, rng, central=False):
@@ -37,29 +37,6 @@ def sampled_seed_slices(gt_full, k, rng, central=False):
     if central:
         return zs[np.argsort(areas[zs])[::-1][:k]]
     return rng.choice(zs, size=k, replace=len(zs) < k)
-
-
-def dilate_envelopes(consensus, radii, spacing_xyz):
-    """{r_mm: dilated full-grid mask} for each radius. The EDT is computed only in a bbox
-    around the consensus (+ max radius) — a full-grid distance transform is O(volume) and
-    needless, since dilation only reaches voxels near the mask."""
-    sx, sy, sz = spacing_xyz
-    if not consensus.any():
-        return {r: consensus.copy() for r in radii}
-    rmax = max(radii)
-    mz, my, mx = (int(np.ceil(rmax / s)) + 1 for s in (sz, sy, sx))
-    zz, yy, xx = np.where(consensus)
-    z0, z1 = max(0, zz.min() - mz), min(consensus.shape[0], zz.max() + 1 + mz)
-    y0, y1 = max(0, yy.min() - my), min(consensus.shape[1], yy.max() + 1 + my)
-    x0, x1 = max(0, xx.min() - mx), min(consensus.shape[2], xx.max() + 1 + mx)
-    sub = consensus[z0:z1, y0:y1, x0:x1]
-    edt = distance_transform_edt(~sub, sampling=(sz, sy, sx))
-    out = {}
-    for r in radii:
-        full = np.zeros(consensus.shape, bool)
-        full[z0:z1, y0:y1, x0:x1] = sub if r == 0 else (edt <= r)
-        out[r] = full
-    return out
 
 
 def auroc(scores, labels):
@@ -155,7 +132,7 @@ def main():
                 round(inter / mask.sum(), 4) if mask.sum() else float("nan"))
 
     radii = [0.0] + [float(x) for x in a.dilate_mm.split(",") if x.strip()]
-    envelopes = dilate_envelopes(consensus, radii, ctx.grid_img.GetSpacing())
+    envelopes = recall_safe_envelopes(consensus, radii, ctx.grid_img.GetSpacing())
     res["recall_safe"] = []
     for r in radii:
         rec, prec = recall_prec(envelopes[r])

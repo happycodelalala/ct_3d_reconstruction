@@ -62,7 +62,7 @@ DEFAULT_CFG = "configs/sam2.1_hiera_t512.yaml"
 # `crop` is (cz, cy, cx) slices; `dims` is the cropped (D, H, W); indices in gt_roi/img
 # are cropped coords, gt_full/full_shape are the original grid.
 CaseCtx = namedtuple("CaseCtx", "predictor img gt_roi gt_full full_shape crop dims "
-                                "grid_img mr_vol default_seed oar modality")
+                                "grid_img mr_vol ct_vol default_seed oar modality")
 
 
 # --------------------------------------------------------------------------- IO
@@ -325,7 +325,7 @@ def prepare_case(case_dir=None, mr=None, mask=None, ct=None, oar="Bone_Mandible"
     if timing is not None:
         timing["preprocess_s"] = round(clk() - _t, 2)
     return CaseCtx(predictor, img, gt_roi, gt_full, full_shape, crop, (D, H, W),
-                   grid_img, mr_vol, default_seed, oar, modality)
+                   grid_img, mr_vol, ct_vol, default_seed, oar, modality)
 
 
 def segment(ctx, seed_full=None, prompt_kind="mask", shift=0, rng=None, largest_cc_on=True):

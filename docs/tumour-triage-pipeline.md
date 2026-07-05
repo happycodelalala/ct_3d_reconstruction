@@ -186,6 +186,8 @@ Each stays out of the build until its gate is met.
 | **Modality auto-select + CT/MR fusion** | a measured case shows MR-only misses a (bone-involved) tumour a fusion would catch; fusion rule chosen by measurement |
 | **Seedless detection** (normal-anatomy subtraction, paired-organ asymmetry) | the seeded path is solid and seedless cases are common enough to justify the least-reliable component |
 | **Anatomical location reporting** ("left parotid mass, abuts mandible") | reviewers ask for it; needs the organ map first |
+| **Registration-quality gate** [G] | real data with *failing* registrations exists to calibrate a threshold — HaN-Seg registrations are all good, so the gate can't be tuned or tested yet |
+| **Connected-component body mask** | air-pruning (`HU>−500`) proves insufficient — e.g. CT-table / immobilization artifacts (>−500 HU) survive it; the engine's tight ROI crop already prevents the uncropped-leakage the body mask was for |
 
 ## 10. Cost
 
@@ -200,20 +202,22 @@ crop, `--uncertainty` (jittered consensus + uncertainty map), surface metrics; O
 CT/MR/fusion workstation.
 
 **Build order (each gates the next):**
-1. **Calibration experiment (§8)** on proxies with simulated bad seeds — validate §4's assumption
-   *first*. Mostly uses what exists (`--uncertainty`) + a noisy-seed simulator + an error-vs-
-   uncertainty overlap metric.
-2. **Registration MI gate** [G] and **body gate + air prune** [C] — cheap, safe, measurable FP drop.
-3. **Multi-*real*-seed ensemble + confidence routing** [A/D/E].
-4. Only then, §9 extensions as their gates are met.
+1. ✅ **Calibration experiment (§8/§8a)** — `scripts/calibration_experiment.py`. Result: variance-
+   uncertainty fails; pivoted to the recall-safe envelope (§4).
+2. ✅ **Reusable engine** — `prepare_case`/`segment` in `scripts/medsam2_seed_test.py`.
+3. ✅ **MVP pipeline** — `scripts/triage_pipeline.py`: good seeds → ensemble → consensus →
+   recall-safe envelope → air-prune → coverage/coherence confidence → route → `envelope.nrrd`
+   (viewable via `preprocess_hn_mri.py`). Measured: brainstem 0.83 recall / mandible 0.94 recall,
+   both auto-accepted. Registration gate + body-mask CC deferred (§9, with reasons).
+4. **Next:** noisier-annotation robustness; then §9 extensions as their gates are met.
 
 ## 12. What this is *not*
 
 Not a fire-and-forget autosegmenter, and not measurement-grade. Automatic **detection** stays
 unreliable on CT+MR alone (PET would change that). The design **depends on a human** confirming
-flagged cases. What it delivers is a **high-recall, uncertainty-aware triage** that turns scattered
-unreliable annotations into a fast, honest review loop — and it only earns each new capability by
-measuring the last one.
+flagged cases. What it delivers is a **high-recall, recall-safe triage** that turns good-quality
+annotations into a fast, honest review loop — and it only earns each new capability by measuring
+the last one.
 
 ---
 
