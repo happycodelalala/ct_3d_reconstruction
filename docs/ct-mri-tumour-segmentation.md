@@ -285,6 +285,10 @@ volume (~2–4 s total) — trivial. The **only** expense is the CT↔MR registr
 now cached to `mr_in_ct.nrrd` and reused. **A cohort run is registration-bound, not
 GPU-bound** — spend the GPU headroom on the ensemble/uncertainty pass (step 4), not throughput.
 
+**Scaling this to real patients** (CT+MR only, noisy/contradicting seeds, no reliable labels,
+triage goal) — including a **normal-anatomy envelope** for false-positive suppression and
+label-free detection: **[tumour-triage-pipeline.md](tumour-triage-pipeline.md)**.
+
 ### 4.6 The integration point (unchanged)
 
 Whatever tier you pick, the contract is identical to the CT-only path
