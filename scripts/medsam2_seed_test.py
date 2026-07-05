@@ -34,6 +34,7 @@ import json
 import os
 import sys
 import time
+from collections import namedtuple
 
 import numpy as np
 from PIL import Image
@@ -54,6 +55,14 @@ if _MEDSAM2 not in sys.path:
 MODEL_SIZE = 512  # MedSAM2 tiny-hiera config is 512², not 1024²
 IMG_MEAN = (0.485, 0.456, 0.406)  # ImageNet — MedSAM2 keeps SAM2's normalization
 IMG_STD = (0.229, 0.224, 0.225)
+DEFAULT_CKPT = os.path.join(_MEDSAM2, "checkpoints", "MedSAM2_latest.pt")
+DEFAULT_CFG = "configs/sam2.1_hiera_t512.yaml"
+
+# A prepared case: everything needed to segment arbitrary seeds without redoing setup.
+# `crop` is (cz, cy, cx) slices; `dims` is the cropped (D, H, W); indices in gt_roi/img
+# are cropped coords, gt_full/full_shape are the original grid.
+CaseCtx = namedtuple("CaseCtx", "predictor img gt_roi gt_full full_shape crop dims "
+                                "grid_img mr_vol default_seed oar modality")
 
 
 # --------------------------------------------------------------------------- IO
@@ -66,25 +75,25 @@ def _resample_to_grid(img, ref, is_mask):
     return sitk.Resample(sitk.Cast(img, dtype), ref, sitk.Transform(), interp, 0, dtype)
 
 
-def load_inputs(args):
+def load_inputs(case_dir=None, mr_path=None, mask_path=None, ct_path=None, oar="Bone_Mandible"):
     """Return (grid_img, mr_vol, mask_vol, ct_vol_or_None), all on one grid.
     grid_img defines the output geometry; mr_vol is the MR intensity volume; mask_vol
-    is the binary GT mandible; ct_vol feeds --modality ct (None on the --mr/--mask fast
-    path unless --ct is given)."""
-    if args.case_dir:
-        case = os.path.basename(os.path.normpath(args.case_dir))
-        ct, mr = load_ct_mr(args.case_dir)
+    is the binary GT OAR; ct_vol feeds modality=ct (None on the mr/mask fast path unless
+    ct_path is given)."""
+    if case_dir:
+        case = os.path.basename(os.path.normpath(case_dir))
+        ct, mr = load_ct_mr(case_dir)
         tx = register_cached(ct, mr, case)
         mr_vol = sitk.Resample(mr, ct, tx, sitk.sitkLinear, 0.0, sitk.sitkFloat32)
-        cand = glob.glob(os.path.join(args.case_dir, f"*OAR_{args.oar}*.nrrd"))
+        cand = glob.glob(os.path.join(case_dir, f"*OAR_{oar}*.nrrd"))
         if not cand:
-            raise SystemExit(f"no *OAR_{args.oar}*.nrrd in {args.case_dir}")
+            raise SystemExit(f"no *OAR_{oar}*.nrrd in {case_dir}")
         mask_vol = _resample_to_grid(sitk.ReadImage(cand[0]), ct, is_mask=True)
         return ct, mr_vol, mask_vol, ct
     # fast path: pre-registered MR + a mask, aligned to the MR grid
-    mr_vol = sitk.ReadImage(args.mr, sitk.sitkFloat32)
-    mask_vol = _resample_to_grid(sitk.ReadImage(args.mask), mr_vol, is_mask=True)
-    ct_vol = _resample_to_grid(sitk.ReadImage(args.ct), mr_vol, is_mask=False) if args.ct else None
+    mr_vol = sitk.ReadImage(mr_path, sitk.sitkFloat32)
+    mask_vol = _resample_to_grid(sitk.ReadImage(mask_path), mr_vol, is_mask=True)
+    ct_vol = _resample_to_grid(sitk.ReadImage(ct_path), mr_vol, is_mask=False) if ct_path else None
     return mr_vol, mr_vol, mask_vol, ct_vol
 
 
@@ -267,6 +276,75 @@ def write_qa(grid_img, mr_vol, pred_arr, gt_arr, seed_idx, out_png):
     return picks
 
 
+# ------------------------------------------------------------ reusable engine
+def prepare_case(case_dir=None, mr=None, mask=None, ct=None, oar="Bone_Mandible",
+                 modality="mr", crop_margin_mm=24.0, no_crop=False,
+                 checkpoint=DEFAULT_CKPT, cfg=DEFAULT_CFG, verbose=True, timing=None):
+    """Load + register (cached) + crop + build the predictor + preprocess a case into a
+    reusable CaseCtx. The 'segment one seed on this case' operation (segment()) builds on
+    this, so the CLI harness and experiment scripts share one setup path rather than
+    each reimplementing it. Fills `timing` (dict) with phase seconds if given."""
+    import torch
+    from sam2.build_sam import build_sam2_video_predictor_npz
+    clk = time.perf_counter
+    _t = clk()
+    grid_img, mr_vol, mask_vol, ct_vol = load_inputs(case_dir, mr, mask, ct, oar)
+    if timing is not None:
+        timing["load_register_s"] = round(clk() - _t, 2)
+    mr_arr = sitk.GetArrayFromImage(mr_vol)
+    gt_full = (sitk.GetArrayFromImage(mask_vol) > 0).astype(np.uint8)
+    if modality == "ct":
+        if ct_vol is None:
+            raise SystemExit("modality=ct requires CT (use case_dir, or pass ct=… on the fast path)")
+        vol_arr, win_fn = sitk.GetArrayFromImage(ct_vol), ct_to_uint8
+    else:
+        vol_arr, win_fn = mr_arr, mr_to_uint8
+    if gt_full.sum() == 0:
+        raise SystemExit(f"{oar} mask is empty on the grid — check inputs/registration")
+    full_shape = vol_arr.shape
+    default_seed = pick_seed_slice(gt_full, None)
+    if no_crop:
+        crop, gt_roi = (slice(None), slice(None), slice(None)), gt_full
+    else:
+        crop = roi_crop(gt_full, grid_img.GetSpacing(), crop_margin_mm)
+        vol_arr, gt_roi = vol_arr[crop], gt_full[crop]
+    D, H, W = vol_arr.shape
+    if verbose:
+        name = os.path.basename(os.path.normpath(case_dir or mr))
+        print(f"[{name}] oar={oar} modality={modality} full {full_shape} roi {(D, H, W)}"
+              f" target voxels {int(gt_full.sum())} default seed z={default_seed}")
+    _t = clk()
+    torch.set_float32_matmul_precision("high")
+    predictor = build_sam2_video_predictor_npz(cfg, checkpoint)
+    torch.cuda.synchronize()
+    if timing is not None:
+        timing["build_predictor_s"] = round(clk() - _t, 2)
+    _t = clk()
+    img = to_model_input(win_fn(vol_arr))
+    torch.cuda.synchronize()
+    if timing is not None:
+        timing["preprocess_s"] = round(clk() - _t, 2)
+    return CaseCtx(predictor, img, gt_roi, gt_full, full_shape, crop, (D, H, W),
+                   grid_img, mr_vol, default_seed, oar, modality)
+
+
+def segment(ctx, seed_full=None, prompt_kind="mask", shift=0, rng=None, largest_cc_on=True):
+    """Segment one seed on a prepared case → full-grid uint8 mask. `seed_full` is a slice
+    index in FULL-grid coords (default = the largest-area slice); shift/rng jitter the
+    prompt for ensemble runs. Bidirectional propagation happens inside the ROI, then the
+    result is pasted back onto the full grid."""
+    cz, cy, cx = ctx.crop
+    D, H, W = ctx.dims
+    seed_full = ctx.default_seed if seed_full is None else seed_full
+    seed_idx = seed_full - (cz.start or 0)  # into cropped coords
+    state = ctx.predictor.init_state(ctx.img, H, W)
+    prompt = build_prompt(prompt_kind, ctx.gt_roi, seed_idx, shift, rng)
+    pred_roi = propagate(ctx.predictor, state, seed_idx, prompt, D, H, W)
+    pred = np.zeros(ctx.full_shape, np.uint8)
+    pred[cz, cy, cx] = pred_roi
+    return largest_cc(pred) if largest_cc_on else pred
+
+
 # ---------------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(description="MedSAM2 zero-shot seed test on HaN-Seg mandible.")
@@ -292,8 +370,8 @@ def main():
     ap.add_argument("--jitter", type=int, default=12, help="max prompt jitter in px (uncertainty runs)")
     ap.add_argument("--no-largest-cc", action="store_true", help="skip largest-connected-component cleanup")
     ap.add_argument("--surface", action="store_true", help="also compute ASSD / HD95 / surface-Dice")
-    ap.add_argument("--checkpoint", default=os.path.join(_MEDSAM2, "checkpoints", "MedSAM2_latest.pt"))
-    ap.add_argument("--cfg", default="configs/sam2.1_hiera_t512.yaml")
+    ap.add_argument("--checkpoint", default=DEFAULT_CKPT)
+    ap.add_argument("--cfg", default=DEFAULT_CFG)
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
     if not a.case_dir and not (a.mr and a.mask):
@@ -308,80 +386,26 @@ def main():
     clk = time.perf_counter
     t_start = clk()
     timing = {}
-    _t = clk()
-    grid_img, mr_vol, mask_vol, ct_vol = load_inputs(a)
-    timing["load_register_s"] = round(clk() - _t, 2)
-    mr_arr = sitk.GetArrayFromImage(mr_vol)  # kept as the QA display base
-    gt_arr = (sitk.GetArrayFromImage(mask_vol) > 0).astype(np.uint8)
-    # intensity volume MedSAM2 actually propagates through, per --modality
-    if a.modality == "ct":
-        if ct_vol is None:
-            raise SystemExit("--modality ct requires CT (use --case-dir, or add --ct on the fast path)")
-        vol_arr, win_fn = sitk.GetArrayFromImage(ct_vol), ct_to_uint8
-    else:
-        vol_arr, win_fn = mr_arr, mr_to_uint8
-    D, H, W = vol_arr.shape
-    if gt_arr.sum() == 0:
-        raise SystemExit(f"{a.oar} mask is empty on the grid — check inputs/registration")
-    seed_full = pick_seed_slice(gt_arr, a.seed_slice)
-    print(f"[{case}] oar={a.oar}  modality={a.modality}  grid {D}x{H}x{W}  target voxels {int(gt_arr.sum())}"
-          f"  seed slice z={seed_full}  (largest-area z={int(np.argmax(gt_arr.reshape(D,-1).sum(1)))})")
-
-    # Crop to the mandible ROI (+margin) before inference; keep the full-grid arrays
-    # to paste the prediction back and to score/QA on the original geometry.
-    full_shape, gt_full = (D, H, W), gt_arr
-    if a.no_crop:
-        cz = cy = cx = slice(None)
-    else:
-        cz, cy, cx = roi_crop(gt_arr, grid_img.GetSpacing(), a.crop_margin_mm)
-        vol_arr, gt_arr = vol_arr[cz, cy, cx], gt_arr[cz, cy, cx]
-        D, H, W = vol_arr.shape
-        print(f"  crop -> z[{cz.start}:{cz.stop}] y[{cy.start}:{cy.stop}] x[{cx.start}:{cx.stop}]"
-              f"  = {D}x{H}x{W}  (mandible now {gt_arr.sum()/gt_arr.size*100:.2f}% of ROI voxels)")
-    seed_idx = seed_full - (cz.start or 0)  # seed in cropped coords for inference
-
-    # build predictor + bind the prompt adders to it
-    import torch
-    torch.set_float32_matmul_precision("high")
-    from sam2.build_sam import build_sam2_video_predictor_npz
-    print("  building MedSAM2 predictor…")
-    _t = clk()
-    predictor = build_sam2_video_predictor_npz(a.cfg, a.checkpoint)
-    torch.cuda.synchronize()
-    timing["build_predictor_s"] = round(clk() - _t, 2)
-
-    _t = clk()
-    img = to_model_input(win_fn(vol_arr))
-    torch.cuda.synchronize()
-    timing["preprocess_s"] = round(clk() - _t, 2)
-    print(f"  input {tuple(img.shape)} on {img.device}")
-
-    def run_once(shift=0, rng=None):
-        state = predictor.init_state(img, H, W)
-        prompt = build_prompt(a.prompt, gt_arr, seed_idx, shift, rng)
-        return propagate(predictor, state, seed_idx, prompt, D, H, W)
-
-    # paste a cropped ROI prediction back onto the full grid (identity if --no-crop)
-    def to_full(p):
-        f = np.zeros(full_shape, np.uint8)
-        f[cz, cy, cx] = p
-        return f
+    ctx = prepare_case(a.case_dir, a.mr, a.mask, a.ct, a.oar, a.modality,
+                       a.crop_margin_mm, a.no_crop, a.checkpoint, a.cfg, timing=timing)
+    gt_full, full_shape, grid_img, mr_vol = ctx.gt_full, ctx.full_shape, ctx.grid_img, ctx.mr_vol
+    D, H, W = ctx.dims
+    seed_full = pick_seed_slice(gt_full, a.seed_slice)
 
     # ---- main run (experiment A/B/C) --------------------------------------
+    import torch
     torch.cuda.reset_peak_memory_stats()
     _t = clk()
-    pred = to_full(run_once())
+    pred = segment(ctx, seed_full, a.prompt, largest_cc_on=not a.no_largest_cc)
     torch.cuda.synchronize()
     _prop = clk() - _t
     timing["propagate_s"] = round(_prop, 2)
     timing["propagate_ms_per_slice"] = round(_prop * 1000 / D, 1)
     timing["slices_per_s"] = round(D / _prop, 1)
     vram_peak_gib = torch.cuda.max_memory_allocated() / 1024 ** 3
-    if not a.no_largest_cc:
-        pred = largest_cc(pred)
 
     metrics = {"case": case, "oar": a.oar, "modality": a.modality, "prompt": a.prompt, "seed_slice": seed_full,
-               "grid": list(full_shape), "roi": [D, H, W], "gt_voxels": int(gt_full.sum()),
+               "grid": list(full_shape), "roi": list(ctx.dims), "gt_voxels": int(gt_full.sum()),
                "pred_voxels": int(pred.sum()), "dice": round(dice(pred, gt_full), 4)}
     if a.surface:
         metrics.update({k: (round(v, 3) if isinstance(v, float) else v)
@@ -393,9 +417,7 @@ def main():
         acc = np.zeros(full_shape, np.float32)
         for k in range(a.uncertainty):
             rng = np.random.RandomState(1000 + k)
-            m = to_full(run_once(a.jitter, rng))
-            if not a.no_largest_cc:
-                m = largest_cc(m)
+            m = segment(ctx, seed_full, a.prompt, a.jitter, rng, largest_cc_on=not a.no_largest_cc)
             acc += m
             print(f"    uncertainty run {k+1}/{a.uncertainty}  Dice {dice(m, gt_full):.3f}")
         vote = acc / a.uncertainty
