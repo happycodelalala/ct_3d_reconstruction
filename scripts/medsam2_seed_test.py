@@ -76,9 +76,9 @@ def load_inputs(args):
         ct, mr = load_ct_mr(args.case_dir)
         tx = register_cached(ct, mr, case)
         mr_vol = sitk.Resample(mr, ct, tx, sitk.sitkLinear, 0.0, sitk.sitkFloat32)
-        cand = glob.glob(os.path.join(args.case_dir, "*OAR_Bone_Mandible*.nrrd"))
+        cand = glob.glob(os.path.join(args.case_dir, f"*OAR_{args.oar}*.nrrd"))
         if not cand:
-            raise SystemExit(f"no *OAR_Bone_Mandible*.nrrd in {args.case_dir}")
+            raise SystemExit(f"no *OAR_{args.oar}*.nrrd in {args.case_dir}")
         mask_vol = _resample_to_grid(sitk.ReadImage(cand[0]), ct, is_mask=True)
         return ct, mr_vol, mask_vol, ct
     # fast path: pre-registered MR + a mask, aligned to the MR grid
@@ -279,6 +279,10 @@ def main():
     ap.add_argument("--modality", choices=["mr", "ct"], default="mr",
                     help="volume MedSAM2 propagates through: mr (recipe) or ct "
                          "(mechanism check — mandible is crisp bone on CT, a void on MR)")
+    ap.add_argument("--oar", default="Bone_Mandible",
+                    help="target OAR on the --case-dir route (substring of its .seg.nrrd "
+                         "filename), e.g. Brainstem, Parotid_L, Glnd_Submand_L. Soft-tissue "
+                         "OARs are the fair MR test; bone is a T1 void")
     ap.add_argument("--seed-slice", type=int, default=None, help="force seed slice (off-centre = exp C)")
     ap.add_argument("--crop-margin-mm", type=float, default=24.0,
                     help="crop to the mandible ROI + this margin (mm) before inference; "
@@ -296,7 +300,8 @@ def main():
         ap.error("provide --case-dir OR both --mr and --mask")
 
     case = os.path.basename(os.path.normpath(a.case_dir or a.mr)).split(".")[0].replace("_IMG_MR_T1", "")
-    out_dir = a.out or os.path.join("runs", "medsam2_seed", f"{case}_{a.modality}_{a.prompt}"
+    oar_tag = "" if a.oar == "Bone_Mandible" else f"_{a.oar.lower()}"
+    out_dir = a.out or os.path.join("runs", "medsam2_seed", f"{case}{oar_tag}_{a.modality}_{a.prompt}"
                                     + (f"_s{a.seed_slice}" if a.seed_slice is not None else ""))
     os.makedirs(out_dir, exist_ok=True)
 
@@ -317,9 +322,9 @@ def main():
         vol_arr, win_fn = mr_arr, mr_to_uint8
     D, H, W = vol_arr.shape
     if gt_arr.sum() == 0:
-        raise SystemExit("mandible mask is empty on the grid — check inputs/registration")
+        raise SystemExit(f"{a.oar} mask is empty on the grid — check inputs/registration")
     seed_full = pick_seed_slice(gt_arr, a.seed_slice)
-    print(f"[{case}] modality={a.modality}  grid {D}x{H}x{W}  mandible voxels {int(gt_arr.sum())}"
+    print(f"[{case}] oar={a.oar}  modality={a.modality}  grid {D}x{H}x{W}  target voxels {int(gt_arr.sum())}"
           f"  seed slice z={seed_full}  (largest-area z={int(np.argmax(gt_arr.reshape(D,-1).sum(1)))})")
 
     # Crop to the mandible ROI (+margin) before inference; keep the full-grid arrays
@@ -375,7 +380,7 @@ def main():
     if not a.no_largest_cc:
         pred = largest_cc(pred)
 
-    metrics = {"case": case, "modality": a.modality, "prompt": a.prompt, "seed_slice": seed_full,
+    metrics = {"case": case, "oar": a.oar, "modality": a.modality, "prompt": a.prompt, "seed_slice": seed_full,
                "grid": list(full_shape), "roi": [D, H, W], "gt_voxels": int(gt_full.sum()),
                "pred_voxels": int(pred.sum()), "dice": round(dice(pred, gt_full), 4)}
     if a.surface:
