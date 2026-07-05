@@ -48,15 +48,33 @@ line sharp is the whole point — it's what stops this from becoming a system we
 The core (§5) assumes **≥1 (noisy) seed per lesion** and reuses the validated propagation. Detection
 with no seed is a separate, later track.
 
-## 4. The load-bearing assumption (validate before anything else)
+## 4. The load-bearing assumption — TESTED, and it FAILED (2026-07-04)
 
-The entire triage premise rests on **one** claim:
+The original premise was:
 
-> Consensus + per-voxel uncertainty, computed from **noisy** seeds, is **calibrated** — high
-> uncertainty actually predicts where the mask is wrong.
+> Consensus + per-voxel uncertainty, computed from **noisy** seeds, is calibrated — high
+> uncertainty predicts where the mask is wrong.
 
-If that holds, confidence routing works and the rest is engineering. If it fails, no amount of
-envelope or detection work matters. So it is the **first thing we measure** (§8) — not the last.
+We tested it first (`scripts/calibration_experiment.py`, brainstem/mandible proxies with simulated
+noisy seeds) and it **fails**: **AUROC ≈ 0.50** (uncertainty is no better than chance at ranking
+error voxels), and **~22 % of missed tumour is a "silent miss"** — invisible to the uncertainty map.
+It fails identically with 0 % gross-contradiction seeds, so it's intrinsic, not seed-noise.
+
+**Root cause:** agreement-based uncertainty measures **variance** across seeds, but MedSAM2's
+dominant error is **bias** — it systematically *under-segments*. Every seed under-shoots the same
+boundary, so they **agree** exactly where the mask is wrong; variance is blind to bias. (Voting
+reduces variance but not shared bias, so consensus can't beat the best single noisy seed either.)
+
+**The pivot (validated):** since the failure is under-segmentation and triage's danger is *missed*
+tumour, replace variance-uncertainty with a **recall-safe envelope** — dilate the good delineation
+outward (spacing-aware) to cover the systematic miss, and let the human tighten. Under good seeds a
+**+2 mm** envelope lifts recall 0.70→0.88 (brainstem) / 0.90→0.98 (mandible) and even improves Dice;
+**+4 mm** reaches ≥0.97 recall for a recall-first operating point (§8a). This targets the actual
+failure head-on. Confidence is now **coverage-based** (how much dilation to reach a given recall),
+not seed-agreement.
+
+> **Lesson banked:** the go/no-go gate cost one experiment and one refactor, not a whole pipeline —
+> which is exactly why it went first.
 
 ## 5. The MVP core
 
@@ -67,11 +85,11 @@ CT/MR + seeds
    │ pass
 [A] ensemble propagate: each seed + jitter ──► N candidate masks
    │
-[B] consensus + per-voxel uncertainty  (vote/STAPLE)
+[B] consensus (vote/STAPLE) ──► recall-safe envelope: dilate +Nmm to cover under-seg (§4)
    │
 [C] body-mask HARD gate + air prune  (safe deletes only, §6)
    │
-[D] confidence = f(seed agreement, propagation coherence, uncertainty)
+[D] confidence = coverage (dilation to reach target recall); seed agreement a weak secondary
    │
 [E] route: {auto-accept (glance) | REVIEW (with reason)}  ──► human confirm in workstation
                                                                   │
@@ -86,13 +104,16 @@ CT/MR + seeds
   (`--uncertainty`, scaled), each a tight-ROI bidirectional MedSAM2 run on **MR** (tumours are
   soft-tissue; CT is used only for the gate in [C]). Tight ROI is the first-order drift control —
   Dice collapsed 0.89 → 0.67 → 0.20 as the ROI loosened.
-- **[B] Consensus + uncertainty.** Vote/STAPLE the N masks → one mask + a per-voxel uncertainty map.
-  Seeds agreeing → confident; contradicting → uncertain **exactly where they disagree**.
+- **[B] Consensus → recall-safe envelope.** Vote/STAPLE the N masks → one mask, then **dilate it
+  +N mm** (spacing-aware) to cover the model's systematic under-segmentation (§4). Per-voxel
+  seed-agreement uncertainty is **not** used for confidence — it's miscalibrated (§4).
 - **[C] Body gate + air prune.** Delete only what is *provably* not tumour: voxels **outside the
   body mask** (the exact failure we saw uncropped) and voxels at **air HU**. Both are safe hard
-  deletes (§6). Nothing else is deleted in the core.
-- **[D]/[E] Confidence + routing.** Low seed-agreement, incoherent propagation, or high mean
-  uncertainty → **REVIEW** with the reason. **Non-convergence of the seeds is itself the signal** —
+  deletes (§6). Nothing else is deleted in the core. Apply *after* the dilation, so the envelope
+  can't leak out of the body.
+- **[D]/[E] Confidence + routing.** Confidence is **coverage-based** — how much dilation was needed
+  to reach the target recall, plus propagation coherence. Incoherent propagation or seeds that don't
+  converge → **REVIEW** with the reason. **Non-convergence of the seeds is itself the signal** —
   we do not need to cluster or classify contradictions to be safe (§7). Rank the queue by confidence
   so risky cases surface first.
 
@@ -130,6 +151,29 @@ contradicting + wrong-slice seeds:
 
 Plus test–retest consistency (jittered seeds, same case) and, in use, the **human override rate** as
 the real-world quality metric.
+
+## 8a. Measured results (2026-07-04, `case_01`)
+
+`scripts/calibration_experiment.py` on the brainstem (MR) and mandible (CT) proxies.
+
+**Calibration (the load-bearing test) — FAILED** (see §4 for the root cause): AUROC ≈ 0.50 for
+uncertainty-predicts-error, ~22–24 % silent misses, and consensus does not beat the best single
+*noisy* seed. → variance-uncertainty dropped as the confidence mechanism.
+
+**Recall-safe envelope (the pivot) — WORKS**, under good-quality seeds:
+
+| target (good seeds) | raw recall / prec | +2 mm | +4 mm |
+|---|---|---|---|
+| Brainstem (MR) | 0.70 / 0.91 | **0.88 / 0.78** (Dice 0.83) | 0.97 / 0.56 |
+| Mandible (CT) | 0.90 / 0.85 | **0.98 / 0.61** | 0.99 / 0.40 |
+
+A **+2 mm** dilation is a reasonable default (recovers most misses, Dice flat-to-up); push to +4 mm
+for a recall-first operating point. Precision falls faster on thin structures (mandible) than compact
+ones (brainstem), so the radius is a per-target knob the human's confirm step absorbs.
+
+**Consequence for the plan:** the pipeline is finishable **starting from good-quality annotations**
+(the pragmatic starting condition), with a recall-safe envelope + human confirm. Noisier-annotation
+robustness is deferred until the good-conditions loop is solid.
 
 ## 9. Evidence-gated extensions (deferred on purpose)
 
