@@ -119,6 +119,38 @@ The MedSAM2 API is the part we finalize when we can run it:
 6. Fold measured results into [§4.5](ct-mri-tumour-segmentation.md); decide go/no-go for the
    tumour path.
 
+## 8. Results (measured 2026-07-04, RTX 3080, `case_01`)
+
+Ran on the laptop as planned. Environment resolved the §6 unknowns: entry point
+`build_sam2_video_predictor_npz`, init from a numpy/tensor volume, **512²** (not 1024²),
+mask prompt via `add_new_mask`, bidirectional `propagate_in_video` with `reset_state` between,
+ImageNet-normalized RGB-replicated input. Harness: [`scripts/medsam2_seed_test.py`](../scripts/medsam2_seed_test.py).
+
+| Run | Modality | Prompt | ROI margin | Dice | pred/GT vol |
+|---|---|---|---|---|---|
+| **A′** | **CT** | **mask** | **6 mm** | **0.89** | **1.02** |
+| A | CT | mask | 12 mm | 0.67 | 1.65 |
+| — | CT | mask | uncropped | 0.20 | 6.9 |
+| B | CT | box | 12 mm | 0.67 | 0.58 |
+| — | MR | mask | 6 mm | 0.46 | 2.0 |
+| — | MR | box | 12 mm | 0.27 | 1.6 |
+
+**Verdict — GO, with two corrections to the plan:**
+- ✅ **Mechanism validated** (§5 success criterion met): CT + mask + tight ROI → **Dice 0.89**,
+  volume-matched. Single-slice → 3D propagation genuinely works on our data.
+- ⚠️ **Plan miss #1 — cropping is mandatory.** Uncropped, propagation over-segments ~7× and
+  drifts into skull/facial bone (Dice 0.20). A **tight ROI crop** is a first-order recipe step,
+  now added to [§4.5 step 3](ct-mri-tumour-segmentation.md#45-in-our-setting-sparse-seeds-no-labels-gpu-server).
+  This is the drift the plan anticipated (exp C), but it dominates even from a *centre* seed.
+- ⚠️ **Plan miss #2 — the mandible is not an MR proxy.** §1 called it "high-contrast"; that's
+  true on **CT**, but on **T1 MR cortical bone is a signal void**, so the mandible caps at
+  ~0.46 on the very modality the recipe uses. It's a valid upper-bound check for a *CT-visible*
+  target; the fair **MR** test is a soft-tissue OAR (parotid/brainstem), which is what a tumour
+  actually resembles. → **next experiment.**
+
+**Inference profile:** ~15–27 ms/slice, ≤2.2 GB VRAM, ~2–4 s per volume. Bottleneck is the
+CT↔MR registration (~5 min CPU), now cached to `mr_in_ct.nrrd`. Cohort = registration-bound.
+
 ---
 
 *Recipe under test: [`docs/ct-mri-tumour-segmentation.md` §4.5](ct-mri-tumour-segmentation.md#45-in-our-setting-sparse-seeds-no-labels-gpu-server).

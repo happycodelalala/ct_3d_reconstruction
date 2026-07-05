@@ -219,10 +219,13 @@ into MR space, so the tumour can be prompted on the MR where it is actually visi
 2. **Prompt-segment on the MR** with MedSAM2 — feed the seed as a **mask prompt, not just a
    box** (a direct precedent reports ≈0.71 vs 0.57 Dice for mask vs box). It propagates the
    mask bidirectionally through the volume via SAM2 memory attention (single-slice→3D).
-3. **Re-prompt center-outward.** SAM2 propagation *drifts* from an off-centre prompt, and our
-   seed slice is inconsistently placed — so after a first pass, re-prompt from the
-   **auto-detected largest-area slice** and propagate outward from there (the documented
-   most-stable strategy). Don't propagate blindly from the raw seed.
+3. **Crop to a tight ROI, and re-prompt center-outward.** Two coupled drift controls, and the
+   **crop is first-order** (measured below): propagate inside a tight box around the target,
+   not the whole volume — otherwise propagation wanders into adjacent bright/again-plausible
+   structures and Dice collapses (our mandible test: **0.89 → 0.67 → 0.20** as the ROI margin
+   loosens 6 mm → 12 mm → uncropped). Then, because SAM2 also drifts from an off-centre prompt
+   and our seed is inconsistently placed, re-prompt from the **auto-detected largest-area
+   slice** and propagate outward from there. Don't propagate blindly, or over the whole grid.
 4. **Ensemble + multi-prompt consensus + uncertainty.** Jitter the prompt + augmentations N
    times (± SAM-Med3D); fuse by voting/STAPLE → a mask **and a per-voxel uncertainty map**.
    This is a published technique that also *raises* DSC (SAM-U / UR-SAM: +10–14%), and it
@@ -252,10 +255,35 @@ doesn't fix label noise; keep fusion and robustness at **inference** (ensemble +
 > self-supervised pretraining (contrastive/MAE) or CT↔MR modality translation on the
 > **unlabelled paired** cohort — worth it only if the promptable ensemble plateaus.
 
-**First experiment (planned):** validate this recipe's *mechanism* on real 3D ground truth
-using the HaN-Seg **mandible as a stand-in target** (one slice → propagate → Dice vs the full
-mask) before trusting it on unlabelled tumours — see
-[MedSAM2 seed-test plan](medsam2-seed-test-plan.md).
+**First experiment (measured, 2026-07-04):** we validated the *mechanism* on real 3D ground
+truth using the HaN-Seg **mandible as a stand-in target** (one slice → MedSAM2 propagation →
+Dice vs the full mandible mask, `case_01`, RTX 3080; see
+[MedSAM2 seed-test plan](medsam2-seed-test-plan.md) and `scripts/medsam2_seed_test.py`).
+
+| Run | Modality | Prompt | ROI margin | Dice | pred/GT vol |
+|---|---|---|---|---|---|
+| **A′** | **CT** | **mask** | **6 mm** | **0.89** | **1.02** |
+| A | CT | mask | 12 mm | 0.67 | 1.65 |
+| — | CT | mask | uncropped | 0.20 | 6.9 |
+| B | CT | box | 12 mm | 0.67 | 0.58 |
+| — | MR | mask | 6 mm | 0.46 | 2.0 |
+| — | MR | box | 12 mm | 0.27 | 1.6 |
+
+What it establishes:
+- **The mechanism works.** Single mask-seed → bidirectional propagation → 3D mask reaches
+  **Dice 0.89** (volume-matched, pred/GT ≈ 1.0) on the CT — clearing the ≳0.85 success bar.
+- **Tight ROI is the dominant knob** (see step 3): unbounded propagation over-segments ~7× and
+  drifts into skull/facial bone; a tight crop fixes it. This is now an explicit recipe step.
+- **Mask ≥ box**, consistent with the literature (box under-segments, pred/GT 0.58).
+- **The mandible is an upper-bound sanity check for a *CT-visible* target, not an MR proxy.**
+  On the MR it caps at ~0.46 because cortical bone is a **T1 signal void** — the very boundary
+  we propagate along barely exists. A real soft-tissue tumour is MR-*visible*, so the fair next
+  test is a **soft-tissue OAR** (parotid/brainstem) on the MR, not bone.
+
+**Inference cost (same box).** Propagation is **~15–27 ms/slice, ≤2.2 GB VRAM** for a whole
+volume (~2–4 s total) — trivial. The **only** expense is the CT↔MR registration (~5 min, CPU),
+now cached to `mr_in_ct.nrrd` and reused. **A cohort run is registration-bound, not
+GPU-bound** — spend the GPU headroom on the ensemble/uncertainty pass (step 4), not throughput.
 
 ### 4.6 The integration point (unchanged)
 

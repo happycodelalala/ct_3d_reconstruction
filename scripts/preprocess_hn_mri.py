@@ -31,7 +31,7 @@ import SimpleITK as sitk
 from skimage import measure
 from skimage.filters import gaussian
 
-from register_ct_mr import register, load_ct_mr  # validated MR->CT registration
+from register_ct_mr import register_cached, load_ct_mr  # validated, cached MR->CT registration
 
 OUT_XY = 256               # in-plane output resolution
 OUT_Z_CAP = 220            # cap on output slices
@@ -92,9 +92,7 @@ def build(case_dir, out_dir, ds_id, title, roi_glob, roi_label):
     os.makedirs(out_dir, exist_ok=True)
     print(f"[{ds_id}] loading CT + MR…")
     ct, mr = load_ct_mr(case_dir)
-    print(f"[{ds_id}] registering MR -> CT…")
-    tx, mi_naive, mi_after = register(ct, mr)
-    print(f"    MI {mi_naive:.4f} -> {mi_after:.4f}")
+    tx = register_cached(ct, mr, os.path.basename(os.path.normpath(case_dir)))
 
     # stand-in "tumour" mask (an OAR, defined on the CT grid)
     cand = glob.glob(os.path.join(case_dir, roi_glob))

@@ -153,6 +153,34 @@ def register(fixed, moving):
     return final_tx, mi_naive, final_mi
 
 
+def transform_cache_path(case):
+    """Canonical location of a case's MR->CT transform, shared by every script so the
+    ~5-min registration is computed once. Small .tfm (the transform only) — NOT a
+    resampled volume, so each caller resamples MR into its own grid, one interpolation."""
+    return os.path.join("hanseg_data", "registration_check", case, "transform.tfm")
+
+
+def register_cached(ct, mr, case, verbose=True):
+    """register(ct, mr) with a transform cache. Returns the MR->CT transform
+    (FIXED->MOVING, ready for sitk.Resample). On a cache miss it registers and writes
+    the .tfm; on a hit it reads it back in a millisecond."""
+    path = transform_cache_path(case)
+    if os.path.exists(path):
+        if verbose:
+            print(f"[{case}] reusing cached transform {path}")
+        return sitk.ReadTransform(path)
+    if verbose:
+        print(f"[{case}] registering MR -> CT (Mattes MI)…")
+    tx, mi0, mi1 = register(ct, mr)
+    if verbose:
+        print(f"  MI naive {mi0:.4f} -> after {mi1:.4f}")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    sitk.WriteTransform(tx, path)
+    if verbose:
+        print(f"  cached transform -> {path}")
+    return tx
+
+
 # ------------------------------------------------------------------- validation
 def _to_u8(img):
     """Rescale an intensity volume to uint8 0..255 for display (used for MR)."""
@@ -257,6 +285,10 @@ def main():
     transform, mi_naive, mi_after = register(ct, mr)
     print(f"  MI  naive {mi_naive:.4f}   after {mi_after:.4f}   "
           f"(more negative = better; Δ={mi_naive - mi_after:+.4f})")
+    # warm the shared transform cache so seed-test / preprocess reuse this registration
+    tpath = transform_cache_path(case)
+    os.makedirs(os.path.dirname(tpath), exist_ok=True)
+    sitk.WriteTransform(transform, tpath)
     print(f"[{case}] writing overlays -> {out_dir}")
     mr_vol = write_overlays(ct, mr, transform, out_dir)
     mandible_qa(a.case_dir, ct, mr_vol, out_dir)
