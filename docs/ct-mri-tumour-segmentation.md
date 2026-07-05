@@ -226,10 +226,15 @@ into MR space, so the tumour can be prompted on the MR where it is actually visi
    loosens 6 mm → 12 mm → uncropped). Then, because SAM2 also drifts from an off-centre prompt
    and our seed is inconsistently placed, re-prompt from the **auto-detected largest-area
    slice** and propagate outward from there. Don't propagate blindly, or over the whole grid.
-4. **Ensemble + multi-prompt consensus + uncertainty.** Jitter the prompt + augmentations N
-   times (± SAM-Med3D); fuse by voting/STAPLE → a mask **and a per-voxel uncertainty map**.
-   This is a published technique that also *raises* DSC (SAM-U / UR-SAM: +10–14%), and it
-   turns the brittleness of one inconsistent slice into measurable confidence.
+4. **Ensemble + confidence.** Jitter the prompt N times; fuse by voting/STAPLE → a consensus
+   mask. The literature suggested a per-voxel **uncertainty map** as the confidence signal
+   (SAM-U / UR-SAM). **Measured update (2026-07-04):** on our data that agreement-based
+   uncertainty is **miscalibrated** — AUROC ≈ 0.50 at predicting error, because it measures
+   variance across seeds while MedSAM2's dominant error is *bias* (systematic
+   under-segmentation), which every seed shares. So confidence **pivoted to a recall-safe
+   envelope**: dilate the consensus (+~2 mm, spacing-aware) to cover the systematic miss and
+   let the human tighten. Keep the ensemble/consensus; drop uncertainty-as-confidence. Full
+   result and pipeline: [tumour-triage-pipeline.md §4/§8a](tumour-triage-pipeline.md).
 5. **CT-constrain:** reject mask voxels that fall in bone/air.
 6. Transfer the mask to CT space → existing build (§4.6, §5).
 

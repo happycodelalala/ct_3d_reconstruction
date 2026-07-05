@@ -100,6 +100,7 @@ Key flags (`--help` for all):
 | `--case-dir DIR` | raw HaN-Seg case → register MR→CT inline (cached) |
 | `--mr FILE --mask FILE` | fast path: pre-registered MR + a mask (skip registration) |
 | `--modality {mr,ct}` | volume to propagate through (`mr` = the recipe; `ct` = mechanism check) |
+| `--oar NAME` | target OAR (substring of its `.seg.nrrd`), e.g. `Brainstem`, `Parotid_L`; default `Bone_Mandible`. Soft-tissue OARs are the fair MR test |
 | `--prompt {mask,box}` | seed prompt type (mask ≥ box in practice) |
 | `--crop-margin-mm N` | ROI crop margin — **first-order** knob; tight (≈6) curbs drift, loose over-segments |
 | `--seed-slice N` | force an off-centre seed (drift test); default = largest-area slice |

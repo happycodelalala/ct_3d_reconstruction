@@ -61,15 +61,17 @@ use Node (KiTS) and Python via **uv** (NLST).
 
 ## What's on screen
 
-- **Left rail** — render-layer toggles (tumour segmentation, organ envelope, synced
-  cut-plane, MPR ortho box, multi-layer slice stack, auto-orbit) and CT windowing
-  (window width / level). Toggles auto-disable when a dataset lacks that layer. For
+- **Left rail** — render-layer toggles **one per segmentation label** (each with its
+  colour swatch — e.g. body / bone / organ / tumour on an envelope dataset), plus synced
+  cut-plane, MPR ortho box, multi-layer slice stack, auto-orbit, and CT windowing
+  (window width / level). Toggles are data-driven from the dataset's labels. For
   **CT+MRI datasets** a **CT / MR / FUSION** modality switch appears (with a CT↔MR
   blend slider); every 2D/3D view re-renders from the chosen volume.
-- **Centre — the reconstruction.** Orbit with the mouse (multi-angle). The amber
-  isosurface is the tumour; the teal surface is the organ envelope. A glowing cyan
-  plane is the **active axial slice**; it tracks the CT panel. **MPR ORTHO BOX**
-  draws the three orthogonal planes intersecting at the crosshair.
+- **Centre — the reconstruction.** Orbit with the mouse (multi-angle). Each labelled
+  layer is a shell in its own colour (the tumour is a solid glow; body/bone/organ are
+  translucent), toggled independently. A glowing cyan plane is the **active axial
+  slice**; it tracks the CT panel. **MPR ORTHO BOX** draws the three orthogonal planes
+  intersecting at the crosshair.
 - **Right — the source + reformats.** The original axial CT (scroll to page slices,
   click to move the crosshair), a 2×2 **MPR grid** — **coronal / sagittal / oblique**
   reslices of the *same* volume plus a **MIP** (maximum-intensity projection) — all
@@ -284,6 +286,27 @@ tight ROI crop). Full install + usage runbook: **[docs/medsam2-setup.md](docs/me
 PRED=$(readlink -f runs/medsam2_seed/case_01_ct_mask/pred_mask.nrrd)
 .venv/bin/python scripts/preprocess_hn_mri.py --case-dir hanseg_data/HaN-Seg/set_1/case_01 \
   --id hanseg_case_01_medsam2 --roi-label "MedSAM2 mandible" --roi-glob "$PRED"
+npm run data:index
+```
+
+**Full envelope + GT-vs-segmentation comparison.** `build_envelope_dataset.py` assembles a
+**multi-label envelope** — body (CT mask), bone (CT threshold), organ (all-OAR union), and a
+tumour layer — into one dataset the workstation renders as **independently-toggleable layers**
+(2D overlays + 3D shells, one colour each). Point the tumour layer at the ground-truth OAR *and*
+at the MedSAM2 result to get two comparable cases. The triage design + the **recall-safe
+envelope** behind the tumour layer: **[docs/tumour-triage-pipeline.md](docs/tumour-triage-pipeline.md)**.
+
+```bash
+# recall-safe tumour envelope (triage pipeline)  ->  runs/triage/.../envelope.nrrd
+.venv/bin/python scripts/triage_pipeline.py --case-dir hanseg_data/HaN-Seg/set_1/case_01 \
+  --oar Brainstem --modality mr --dilate-mm 2
+# two full-envelope cases: ground truth (green) vs segmentation (amber)
+BS=hanseg_data/HaN-Seg/set_1/case_01/case_01_OAR_Brainstem.seg.nrrd
+.venv/bin/python scripts/build_envelope_dataset.py --case-dir hanseg_data/HaN-Seg/set_1/case_01 \
+  --tumour "$BS" --tumour-label "brainstem (ground truth)" --tumour-color 90,200,110 --id hanseg_case_01_gt
+.venv/bin/python scripts/build_envelope_dataset.py --case-dir hanseg_data/HaN-Seg/set_1/case_01 \
+  --tumour runs/triage/case_01_brainstem_mr/envelope.nrrd --tumour-label "brainstem (segmentation)" \
+  --tumour-color 255,150,70 --id hanseg_case_01_seg
 npm run data:index
 ```
 

@@ -207,7 +207,8 @@ CT/MR/fusion workstation.
 2. ✅ **Reusable engine** — `prepare_case`/`segment` in `scripts/medsam2_seed_test.py`.
 3. ✅ **MVP pipeline** — `scripts/triage_pipeline.py`: good seeds → ensemble → consensus →
    recall-safe envelope → air-prune → coverage/coherence confidence → route → `envelope.nrrd`
-   (viewable via `preprocess_hn_mri.py`). Measured: brainstem 0.83 recall / mandible 0.94 recall,
+   (viewable as a full body/bone/organ/tumour envelope via `build_envelope_dataset.py`, or as a
+   single mask via `preprocess_hn_mri.py`). Measured: brainstem 0.83 recall / mandible 0.94 recall,
    both auto-accepted. Registration gate + body-mask CC deferred (§9, with reasons).
 4. **Next:** noisier-annotation robustness; then §9 extensions as their gates are met.
 
