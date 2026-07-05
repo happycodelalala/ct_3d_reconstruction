@@ -30,8 +30,10 @@ from register_ct_mr import register_cached, load_ct_mr
 from preprocess_hn_mri import (output_grid, to_zyx, window_ct_u8, window_mr_u8,
                                mesh_from_mask, OUT_XY, CT_HU_LO, CT_HU_HI)
 
-LABELS = {"1": "body envelope", "2": "tumour envelope", "3": "organ envelope", "4": "bone envelope"}
-LABEL_COLORS = {"1": [90, 140, 200], "2": [255, 150, 70], "3": [150, 110, 205], "4": [222, 216, 198]}
+# layer colours (RGB 0..255): body blue, bone cream, organ purple, GT tumour green,
+# predicted tumour amber (so a GT-vs-segmentation comparison reads at a glance).
+C_BODY, C_BONE, C_ORGAN = [90, 140, 200], [222, 216, 198], [150, 110, 205]
+C_TUMOUR_GT, C_TUMOUR_PRED = [90, 200, 110], [255, 150, 70]
 
 
 def body_mask(ct_hu_zyx):
@@ -54,7 +56,9 @@ def _to_grid(img_path, ref):
 def main():
     ap = argparse.ArgumentParser(description="Build a body+tumour+organ multi-label dataset.")
     ap.add_argument("--case-dir", required=True)
-    ap.add_argument("--tumour", required=True, help="tumour-envelope NRRD on the CT grid (triage output)")
+    ap.add_argument("--tumour", required=True, help="tumour NRRD on the CT grid (GT mask or segmentation result)")
+    ap.add_argument("--tumour-label", default="tumour envelope", help="name for the tumour layer")
+    ap.add_argument("--tumour-color", default="255,150,70", help="tumour layer RGB (e.g. 90,200,110 for GT green)")
     ap.add_argument("--bone-hu", type=float, default=200.0, help="CT HU threshold for the bone layer")
     ap.add_argument("--id", default=None)
     ap.add_argument("--title", default=None)
@@ -77,32 +81,38 @@ def main():
     # envelope layers
     body = body_mask(ct_hu)
     bone = (ct_hu > a.bone_hu) & body           # skeleton = dense CT inside the body
-    tumour = _to_grid(a.tumour, ref)
     organ = np.zeros(body.shape, bool)
     for f in sorted(glob.glob(os.path.join(a.case_dir, "*OAR_*.nrrd"))):
         organ |= _to_grid(f, ref)
+    tumour_color = [int(x) for x in a.tumour_color.split(",")]
 
-    # one label per voxel: paint most-specific last so it wins shared voxels
-    # (body < bone < organ < tumour). 3D meshes are built per-layer from the full masks,
-    # so each shell still toggles independently regardless of this 2D precedence.
+    # (label, name, colour, mask, mesh-step). Painted in THIS order so later entries win
+    # shared voxels (body < bone < organ < tumour). Coarser step for the big body shell
+    # (context) than the small detail-worthy layers, to keep body.json light. 3D meshes are
+    # built per-layer from the full masks, so each shell toggles independently in 3D
+    # regardless of the 2D precedence.
+    layers = [
+        (1, "body envelope", C_BODY, body, 3),
+        (4, "bone envelope", C_BONE, bone, 2),
+        (3, "organ envelope", C_ORGAN, organ, 1),
+        (2, a.tumour_label, tumour_color, _to_grid(a.tumour, ref), 1),
+    ]
     seg = np.zeros(body.shape, np.uint8)
-    seg[body] = 1
-    seg[bone] = 4
-    seg[organ] = 3
-    seg[tumour] = 2
+    for label, _, _, mask, _ in layers:
+        seg[mask] = label
 
     phys = np.array([out_size[i] * out_spacing[i] for i in range(3)])
     ext = (phys / phys.max()).tolist()
 
-    meshes = []
-    # coarser marching-cubes step for the big body shell (context only) than for the
-    # small, detail-worthy tumour / organ layers — keeps body.json from ballooning.
-    for lab, mask, fname, step in ((1, body, "body.json", 3), (2, tumour, "tumor.json", 1),
-                                   (3, organ, "organ.json", 1), (4, bone, "bone.json", 2)):
+    meshes, labels_map, label_colors = [], {}, {}
+    for label, name, color, mask, step in layers:
         mesh, nv, nf = mesh_from_mask(mask, ext, step=step)
+        fname = f"mesh{label}.json"
         json.dump(mesh, open(os.path.join(out_dir, fname), "w"))
-        meshes.append({"label": lab, "file": fname})
-        print(f"  label {lab} {LABELS[str(lab)]:16s} {int(mask.sum()):>8} vox  {nv}v/{nf}f")
+        meshes.append({"label": label, "file": fname})
+        labels_map[str(label)] = name
+        label_colors[str(label)] = color
+        print(f"  label {label} {name:24s} {int(mask.sum()):>8} vox  {nv}v/{nf}f")
 
     for name, arr in (("ct.bin.gz", ct_u8), ("mri.bin.gz", mr_u8), ("seg.bin.gz", seg)):
         with open(os.path.join(out_dir, name), "wb") as fp:
@@ -110,7 +120,7 @@ def main():
 
     manifest = {
         "id": ds_id,
-        "title": a.title or f"HaN-Seg · {case} · envelopes (body / tumour / organ)",
+        "title": a.title or f"HaN-Seg · {case} · full envelope",
         "source": "HaN-Seg (Podobnik et al., Zenodo 7442914) — CT + T1 MR + OAR masks",
         "modality": "CT + MR · T1",
         "dims": [OUT_XY, OUT_XY, out_size[2]],
@@ -120,12 +130,11 @@ def main():
         "defaultWL": {"window": 0.85, "level": 0.5},
         "mriWL": {"window": 0.9, "level": 0.5},
         "hasSegmentation": True,
-        "labels": LABELS,
-        "labelColors": LABEL_COLORS,
-        "clinicalNote": ("Three toggleable envelopes on one grid: body (CT), the MedSAM2 "
-                         "tumour-stand-in recall-safe envelope, and the union of all OARs. "
-                         "Demonstrates the triage layering — the 'tumour' is an OAR stand-in, "
-                         "not a real lesion."),
+        "labels": labels_map,
+        "labelColors": label_colors,
+        "clinicalNote": ("Full envelope: body (CT), bone (CT), organ (union of all OARs), and a "
+                         f"tumour-stand-in layer ({a.tumour_label}). The 'tumour' is an OAR "
+                         "stand-in, not a real lesion."),
         "timepoints": [{
             "id": "t0", "label": "CT + MR T1",
             "ct": "ct.bin.gz", "mri": "mri.bin.gz", "seg": "seg.bin.gz",
