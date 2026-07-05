@@ -1,5 +1,5 @@
 import { useStore } from "../store";
-import type { DisplayMode } from "../lib/dataset";
+import { LABEL_PALETTE, type DisplayMode } from "../lib/dataset";
 
 const MODES: { m: DisplayMode; label: string }[] = [
   { m: "ct", label: "CT" },
@@ -12,15 +12,17 @@ function Toggle({
   active,
   onClick,
   disabled,
+  color,
 }: {
   label: string;
   active: boolean;
   onClick: () => void;
   disabled?: boolean;
+  color?: string;
 }) {
   return (
     <button className={`toggle ${active ? "on" : ""}`} onClick={onClick} disabled={disabled}>
-      <span className="toggle-dot" />
+      <span className="toggle-dot" style={color && active ? { background: color, boxShadow: `0 0 6px ${color}` } : undefined} />
       {label}
     </button>
   );
@@ -66,9 +68,6 @@ export default function ControlRail() {
   const m = s.real?.manifest;
   const tps = s.real?.timepoints ?? [];
   const hasSeg = !!m?.hasSegmentation;
-  const hasTumor = tps.some((t) => t.tumorMesh);
-  const hasOrgan = tps.some((t) => t.organMesh);
-  const organLabel = m?.labels?.["1"] ? `${m.labels["1"].toUpperCase()} ENVELOPE` : "ORGAN ENVELOPE";
   const hasMri = !!tps[s.timepoint]?.mri;
   // the W/L sliders act on whichever volume is displayed, so the title tracks it
   const winTitle = `${MODES.find((x) => x.m === s.displayModality)?.label ?? "CT"} WINDOWING`;
@@ -104,8 +103,21 @@ export default function ControlRail() {
 
       <div className="rail-group">
         <div className="rail-title">RENDER LAYERS</div>
-        <Toggle label="TUMOUR SEGMENTATION" active={s.showTumor && hasTumor} disabled={!hasTumor} onClick={() => s.set({ showTumor: !s.showTumor })} />
-        <Toggle label={organLabel} active={s.showBody && hasOrgan} disabled={!hasOrgan} onClick={() => s.set({ showBody: !s.showBody })} />
+        {hasSeg && m?.labels &&
+          Object.entries(m.labels).map(([k, name]) => {
+            const lab = Number(k);
+            const rgb = m.labelColors?.[k] ?? LABEL_PALETTE[(lab - 1) % LABEL_PALETTE.length];
+            const on = s.labelVisible[lab] !== false;
+            return (
+              <Toggle
+                key={k}
+                label={name.toUpperCase()}
+                color={`rgb(${rgb[0]},${rgb[1]},${rgb[2]})`}
+                active={on}
+                onClick={() => s.set({ labelVisible: { ...s.labelVisible, [lab]: !on } })}
+              />
+            );
+          })}
         <Toggle label="SYNCED CUT-PLANE" active={s.showCutPlane} onClick={() => s.set({ showCutPlane: !s.showCutPlane })} />
         <Toggle label="MPR ORTHO BOX" active={s.showMPRPlanes} onClick={() => s.set({ showMPRPlanes: !s.showMPRPlanes })} />
         <Toggle label="MULTI-LAYER STACK" active={s.showLayers} onClick={() => s.set({ showLayers: !s.showLayers })} />

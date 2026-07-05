@@ -20,8 +20,7 @@ interface AppState {
   level: number;
   displayModality: DisplayMode; // ct | mri | fusion (mri/fusion only when tp.mri present)
   fusionAlpha: number; // 0 = all CT, 1 = all MR (fusion mode)
-  showTumor: boolean;
-  showBody: boolean; // organ envelope (kidney)
+  labelVisible: Record<number, boolean>; // per seg-label visibility (2D overlay + 3D mesh)
   showLayers: boolean;
   showCutPlane: boolean;
   showMPRPlanes: boolean;
@@ -57,8 +56,7 @@ export const useStore = create<AppState>((set, get) => ({
   level: 0.5,
   displayModality: "ct",
   fusionAlpha: 0.5,
-  showTumor: true,
-  showBody: true,
+  labelVisible: {},
   showLayers: false,
   showCutPlane: true,
   showMPRPlanes: false,
@@ -82,18 +80,22 @@ export const useStore = create<AppState>((set, get) => ({
     }
     set({ datasetId: id, loading: true, loadError: null, real: null, playing: false });
     fetchDataset(entry.base)
-      .then((real) =>
+      .then((real) => {
+        // seed per-label visibility (all on) from the new dataset's labels
+        const labelVisible: Record<number, boolean> = {};
+        for (const k of Object.keys(real.manifest.labels ?? {})) labelVisible[Number(k)] = true;
         set({
           real,
           loading: false,
           timepoint: 0,
           displayModality: "ct", // reset — new dataset may not have an MR
+          labelVisible,
           sliceMax: real.manifest.dims[2] - 1,
           slice: Math.round(real.manifest.dims[2] / 2),
           window: real.manifest.defaultWL.window,
           level: real.manifest.defaultWL.level,
-        })
-      )
+        });
+      })
       .catch((e) => set({ loading: false, loadError: String(e?.message || e) }));
   },
   setTimepoint: (t) =>

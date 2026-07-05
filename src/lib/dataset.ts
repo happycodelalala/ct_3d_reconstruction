@@ -14,6 +14,7 @@ export interface Manifest {
   mriWL?: { window: number; level: number }; // default W/L when the MR is shown
   hasSegmentation: boolean;
   labels: Record<string, string> | null;
+  labelColors?: Record<string, [number, number, number]>; // label value -> RGB 0..255 (else palette)
   clinicalNote?: string;
   timepoints: {
     id: string;
@@ -21,8 +22,9 @@ export interface Manifest {
     ct: string;
     mri?: string; // second volume, registered into the same grid (CT+MRI datasets)
     seg?: string;
-    tumorMesh?: string;
+    tumorMesh?: string; // legacy single-mesh slots (label 2 / label 1); still honoured
     organMesh?: string;
+    meshes?: { label: number; file: string }[]; // one isosurface per seg label
     lungVolumeCm3?: number;
   }[];
   meshes: null;
@@ -52,7 +54,35 @@ export interface Timepoint {
   seg?: Uint8Array;
   tumorMesh?: MeshData;
   organMesh?: MeshData;
+  meshes?: { label: number; mesh: MeshData }[]; // one isosurface per seg label
   lungVolumeCm3?: number;
+}
+
+// Per-label overlay colours: fallback palette (RGB 0..255) indexed by (label-1). Label 2 =
+// tumour stays amber, label 1 teal — so existing 2-label datasets look unchanged.
+export const LABEL_PALETTE: [number, number, number][] = [
+  [40, 130, 148],   // 1 teal
+  [255, 176, 84],   // 2 amber (tumour)
+  [170, 120, 210],  // 3 purple
+  [120, 200, 120],  // 4 green
+  [230, 120, 150],  // 5 pink
+];
+
+// Visible label -> RGB. Absent label = hidden. Built from the manifest + the store's
+// per-label visibility so the renderers stay data-driven (no hard-coded label values).
+export type LabelStyle = Record<number, [number, number, number]>;
+
+export const SEG_TINT = 0.55; // overlay tint strength (mix of greyscale toward the label colour)
+
+export function buildLabelStyle(m: Manifest | undefined, visible: Record<number, boolean>): LabelStyle {
+  const out: LabelStyle = {};
+  if (!m?.labels) return out;
+  for (const key of Object.keys(m.labels)) {
+    const lab = Number(key);
+    if (visible[lab] === false) continue; // undefined defaults to visible
+    out[lab] = m.labelColors?.[key] ?? LABEL_PALETTE[(lab - 1) % LABEL_PALETTE.length];
+  }
+  return out;
 }
 
 // Which volume the 2D/3D renderers draw from. "fusion" blends CT+MR.
@@ -127,6 +157,9 @@ export async function loadDataset(base: string): Promise<RealDataset> {
       seg: tp.seg ? await fetchGzBin(`${base}/${tp.seg}`) : undefined,
       tumorMesh: tp.tumorMesh ? await fetchMesh(`${base}/${tp.tumorMesh}`) : undefined,
       organMesh: tp.organMesh ? await fetchMesh(`${base}/${tp.organMesh}`) : undefined,
+      meshes: tp.meshes
+        ? await Promise.all(tp.meshes.map(async (mm) => ({ label: mm.label, mesh: await fetchMesh(`${base}/${mm.file}`) })))
+        : undefined,
     }))
   );
 
@@ -170,7 +203,7 @@ export function renderRealSlice(
   m: Manifest,
   k: number,
   opts: {
-    window: number; level: number; showTumor: boolean; transparentAir?: boolean;
+    window: number; level: number; labelStyle: LabelStyle; transparentAir?: boolean;
     mri?: Uint8Array; mode?: DisplayMode; fusion?: number;
   }
 ): ImageData {
@@ -190,10 +223,9 @@ export function renderRealSlice(
       const label = seg ? seg[vi] : 0;
       let r = lum, g = lum, b = lum, a = 255;
       if (lum <= 2 && opts.transparentAir) a = 0;
-      if (opts.showTumor && label === 2) {
-        r = mix(lum, 255, 0.62); g = mix(lum, 176, 0.62); b = mix(lum, 84, 0.4); a = 255;
-      } else if (opts.showTumor && label === 1) {
-        r = mix(lum, 40, 0.28); g = mix(lum, 110, 0.28); b = mix(lum, 120, 0.28);
+      const c = label ? opts.labelStyle[label] : undefined;
+      if (c) {
+        r = mix(lum, c[0], SEG_TINT); g = mix(lum, c[1], SEG_TINT); b = mix(lum, c[2], SEG_TINT); a = 255;
       }
       const di = (cy * X + ox) * 4;
       data[di] = r; data[di + 1] = g; data[di + 2] = b; data[di + 3] = a;

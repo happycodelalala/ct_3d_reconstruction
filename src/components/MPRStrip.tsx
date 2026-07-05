@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useStore } from "../store";
 import { renderReformat, renderMIP, realSampler, type PlaneKind } from "../lib/mpr";
-import type { Manifest } from "../lib/dataset";
+import { buildLabelStyle, type Manifest } from "../lib/dataset";
 
 const PLANES: { kind: PlaneKind; label: string }[] = [
   { kind: "coronal", label: "CORONAL" },
@@ -61,16 +61,17 @@ export default function MPRStrip() {
 function ProjectionTile({ kind, label, data }: { kind: PlaneKind; label: string; data: TPData }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const { window, level, showTumor, crossX, crossY, slice, sliceMax, obliqueAngle, setSlice, set,
+  const { window, level, labelVisible, crossX, crossY, slice, sliceMax, obliqueAngle, setSlice, set,
     displayModality, fusionAlpha } = useStore();
   const mode = data.mri ? displayModality : "ct";
+  const labelStyle = buildLabelStyle(data.manifest, labelVisible);
 
   const result = useMemo(() => {
     const cross = { x: crossX, y: crossY, z: slice / sliceMax };
     const { sampler, ext } = realSampler(data.ct, data.seg, data.manifest, window, level,
       { mri: data.mri, mode, fusion: fusionAlpha });
-    return renderReformat(kind, sampler, ext, cross, { angleDeg: obliqueAngle, showTumor, base: 224 });
-  }, [kind, data, window, level, showTumor, crossX, crossY, slice, sliceMax, obliqueAngle, mode, fusionAlpha]);
+    return renderReformat(kind, sampler, ext, cross, { angleDeg: obliqueAngle, labelStyle, base: 224 });
+  }, [kind, data, window, level, labelVisible, crossX, crossY, slice, sliceMax, obliqueAngle, mode, fusionAlpha]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -116,15 +117,16 @@ function ProjectionTile({ kind, label, data }: { kind: PlaneKind; label: string;
 function MIPTile({ data }: { data: TPData }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const { window, level, showTumor, crossX, slice, sliceMax, setSlice, set,
+  const { window, level, labelVisible, crossX, slice, sliceMax, setSlice, set,
     displayModality, fusionAlpha } = useStore();
   const mode = data.mri ? displayModality : "ct";
+  const labelStyle = buildLabelStyle(data.manifest, labelVisible);
 
   const result = useMemo(() => {
     const { sampler, ext } = realSampler(data.ct, data.seg, data.manifest, window, level,
       { mri: data.mri, mode, fusion: fusionAlpha });
-    return renderMIP(sampler, ext, { x: 0.5, y: 0.5, z: 0.5 }, { showTumor, base: 224 });
-  }, [data, window, level, showTumor, mode, fusionAlpha]);
+    return renderMIP(sampler, ext, { x: 0.5, y: 0.5, z: 0.5 }, { labelStyle, base: 224 });
+  }, [data, window, level, labelVisible, mode, fusionAlpha]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

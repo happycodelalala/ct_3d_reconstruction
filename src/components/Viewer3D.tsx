@@ -4,12 +4,14 @@ import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { useStore } from "../store";
 import { makeRealSliceTexture, imageToTexture } from "../lib/sliceTexture";
-import { sliceWorldZ, type MeshData } from "../lib/dataset";
+import { buildLabelStyle, sliceWorldZ, type MeshData } from "../lib/dataset";
 import { renderReformat, realSampler, type PlaneBasis, type PlaneKind } from "../lib/mpr";
 
 // Authored in normalized coordinates, then this group rotates the cranio-caudal
 // (z) axis to vertical so the body "stands up" in the scene.
 const TO_SCENE: [number, number, number] = [-Math.PI / 2, 0, 0];
+
+const rgbCss = (c: [number, number, number]) => `rgb(${c[0]},${c[1]},${c[2]})`;
 
 // Three.js never auto-frees imperatively-created geometries/textures (react-three-
 // fiber only disposes the ones declared as JSX), so each slice scrub or patient
@@ -65,42 +67,45 @@ function useTP() {
 function Scene() {
   const real = useStore((s) => s.real);
   const timepoint = useStore((s) => s.timepoint);
-  const { showBody, showTumor } = useStore();
+  const labelVisible = useStore((s) => s.labelVisible);
   const tp = real?.timepoints[timepoint];
-  const tumorGeo = useDisposable(useMemo(() => (tp?.tumorMesh ? meshToGeometry(tp.tumorMesh) : null), [tp]));
-  const organGeo = useDisposable(useMemo(() => (tp?.organMesh ? meshToGeometry(tp.organMesh) : null), [tp]));
+  const labelStyle = buildLabelStyle(real?.manifest, labelVisible);
+  // Unify legacy single-mesh slots (2 = tumour, 1 = organ) with the per-label mesh list,
+  // then style by label: the tumour (2) is a solid glowing body, everything else a
+  // translucent coloured shell — so nested envelopes (body ⊃ organ ⊃ tumour) read clearly.
+  const meshes = useDisposable(useMemo(() => {
+    const items: { label: number; geo: THREE.BufferGeometry }[] = [];
+    if (tp?.tumorMesh) items.push({ label: 2, geo: meshToGeometry(tp.tumorMesh) });
+    if (tp?.organMesh) items.push({ label: 1, geo: meshToGeometry(tp.organMesh) });
+    for (const mm of tp?.meshes ?? []) items.push({ label: mm.label, geo: meshToGeometry(mm.mesh) });
+    return items;
+  }, [tp]));
   if (!real) return null;
   return (
     <group>
-      {showBody && organGeo && (
-        <>
-          {/* Translucent organ shell. The previous DoubleSide + depthWrite:false
-              fill made apparent solidity depend on how many shell layers each ray
-              crossed, so it flipped between "solid" and "see-through wireframe" as
-              the camera orbited. FrontSide keeps the per-ray layer count ~constant,
-              and explicit renderOrder pins the blend order (alpha blending is
-              order-dependent) so the look is now stable from every angle. */}
-          <mesh geometry={organGeo} renderOrder={1}>
-            <meshStandardMaterial color={"#3a8294"} transparent opacity={0.3} roughness={0.7} side={THREE.FrontSide} depthWrite={false} />
+      {meshes.map(({ label, geo }) => {
+        const c = labelStyle[label];
+        if (!c) return null;
+        const col = rgbCss(c);
+        if (label === 2) {
+          return (
+            <group key={label}>
+              <mesh geometry={geo}>
+                <meshStandardMaterial color={col} emissive={col} emissiveIntensity={0.22} roughness={0.4} metalness={0.05} />
+              </mesh>
+              <mesh geometry={geo} scale={1.05}>
+                <meshBasicMaterial color={col} transparent opacity={0.08} side={THREE.BackSide} depthWrite={false} />
+              </mesh>
+            </group>
+          );
+        }
+        // FrontSide + renderOrder keeps the translucent shell's look stable as the camera orbits
+        return (
+          <mesh key={label} geometry={geo} renderOrder={1}>
+            <meshStandardMaterial color={col} transparent opacity={0.26} roughness={0.7} side={THREE.FrontSide} depthWrite={false} />
           </mesh>
-          {/* Wireframe kept only as a faint surface texture — at grazing angles a
-              strong wireframe packs densely and reads as bare "geometry", so it
-              stays well below the fill to keep the shell looking filled at all angles. */}
-          <mesh geometry={organGeo} renderOrder={2}>
-            <meshBasicMaterial color={"#4fa6b8"} wireframe transparent opacity={0.05} side={THREE.FrontSide} depthWrite={false} />
-          </mesh>
-        </>
-      )}
-      {showTumor && tumorGeo && (
-        <>
-          <mesh geometry={tumorGeo}>
-            <meshStandardMaterial color={"#ff9d3c"} emissive={"#7a3200"} emissiveIntensity={0.4} roughness={0.4} metalness={0.05} />
-          </mesh>
-          <mesh geometry={tumorGeo} scale={1.05}>
-            <meshBasicMaterial color={"#ffd9a0"} transparent opacity={0.08} side={THREE.BackSide} depthWrite={false} />
-          </mesh>
-        </>
-      )}
+        );
+      })}
       <CutPlane />
       <LayerStack />
       <MPRBox />
@@ -110,11 +115,13 @@ function Scene() {
 
 function CutPlane() {
   const tp = useTP();
-  const { slice, window, level, showCutPlane, showTumor, displayModality, fusionAlpha } = useStore();
+  const { slice, window, level, showCutPlane, displayModality, fusionAlpha } = useStore();
+  const labelVisible = useStore((s) => s.labelVisible);
   const mode = tp?.mri ? displayModality : "ct";
+  const labelStyle = buildLabelStyle(tp?.manifest, labelVisible);
   const tex = useDisposable(useMemo(
-    () => (tp ? makeRealSliceTexture(tp.ct, tp.seg, tp.manifest, slice, { window, level, showTumor, mri: tp.mri, mode, fusion: fusionAlpha }) : null),
-    [tp, slice, window, level, showTumor, mode, fusionAlpha]
+    () => (tp ? makeRealSliceTexture(tp.ct, tp.seg, tp.manifest, slice, { window, level, labelStyle, mri: tp.mri, mode, fusion: fusionAlpha }) : null),
+    [tp, slice, window, level, labelVisible, mode, fusionAlpha]
   ));
   if (!tp || !showCutPlane || !tex) return null;
   const m = tp.manifest;
@@ -123,8 +130,10 @@ function CutPlane() {
 
 function LayerStack() {
   const tp = useTP();
-  const { showLayers, window, level, showTumor, displayModality, fusionAlpha } = useStore();
+  const { showLayers, window, level, displayModality, fusionAlpha } = useStore();
+  const labelVisible = useStore((s) => s.labelVisible);
   const mode = tp?.mri ? displayModality : "ct";
+  const labelStyle = buildLabelStyle(tp?.manifest, labelVisible);
   const layers = useMemo(() => {
     if (!tp || !showLayers) return [];
     const m = tp.manifest;
@@ -132,9 +141,9 @@ function LayerStack() {
     const Z = m.dims[2];
     const step = Math.max(8, Math.round(Z / 22));
     for (let k = step; k < Z - step; k += step)
-      out.push({ z: sliceWorldZ(k, m), tex: makeRealSliceTexture(tp.ct, tp.seg, m, k, { window, level, showTumor, mri: tp.mri, mode, fusion: fusionAlpha }) });
+      out.push({ z: sliceWorldZ(k, m), tex: makeRealSliceTexture(tp.ct, tp.seg, m, k, { window, level, labelStyle, mri: tp.mri, mode, fusion: fusionAlpha }) });
     return out;
-  }, [tp, showLayers, window, level, showTumor, mode, fusionAlpha]);
+  }, [tp, showLayers, window, level, labelVisible, mode, fusionAlpha]);
   useDisposable(layers); // frees the per-layer CanvasTextures when the stack rebuilds
   if (!tp || !showLayers) return null;
   const m = tp.manifest;
@@ -157,15 +166,17 @@ function buildQuad(b: PlaneBasis): THREE.BufferGeometry {
 }
 
 function MPRQuad({ kind, color, tp }: { kind: PlaneKind; color: string; tp: NonNullable<ReturnType<typeof useTP>> }) {
-  const { window, level, showTumor, crossX, crossY, slice, sliceMax, obliqueAngle, displayModality, fusionAlpha } = useStore();
+  const { window, level, crossX, crossY, slice, sliceMax, obliqueAngle, displayModality, fusionAlpha } = useStore();
+  const labelVisible = useStore((s) => s.labelVisible);
   const mode = tp.mri ? displayModality : "ct";
+  const labelStyle = buildLabelStyle(tp.manifest, labelVisible);
   const { tex, geo, edges } = useDisposable(useMemo(() => {
     const cross = { x: crossX, y: crossY, z: slice / sliceMax };
     const { sampler, ext } = realSampler(tp.ct, tp.seg, tp.manifest, window, level, { mri: tp.mri, mode, fusion: fusionAlpha });
-    const rf = renderReformat(kind, sampler, ext, cross, { angleDeg: obliqueAngle, showTumor, base: 200, transparentAir: true });
+    const rf = renderReformat(kind, sampler, ext, cross, { angleDeg: obliqueAngle, labelStyle, base: 200, transparentAir: true });
     const geo = buildQuad(rf.basis);
     return { tex: imageToTexture(rf.img, false), geo, edges: new THREE.EdgesGeometry(geo) };
-  }, [kind, tp, window, level, showTumor, crossX, crossY, slice, sliceMax, obliqueAngle, mode, fusionAlpha]));
+  }, [kind, tp, window, level, labelVisible, crossX, crossY, slice, sliceMax, obliqueAngle, mode, fusionAlpha]));
 
   return (
     <group>

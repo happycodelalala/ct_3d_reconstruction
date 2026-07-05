@@ -1,16 +1,17 @@
 import { useEffect, useRef } from "react";
 import { useStore } from "../store";
-import { renderRealSlice, sliceWorldZ } from "../lib/dataset";
+import { buildLabelStyle, renderRealSlice, sliceWorldZ } from "../lib/dataset";
 
 const SIZE = 360;
 
 export default function CTPanel() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
-  const { slice, window, level, showTumor, setSlice, sliceMax, real, timepoint, crossX, crossY, set,
+  const { slice, window, level, labelVisible, setSlice, sliceMax, real, timepoint, crossX, crossY, set,
     displayModality, fusionAlpha } = useStore();
   const tp = real?.timepoints[timepoint];
   const mode = tp?.mri ? displayModality : "ct";
+  const labelStyle = buildLabelStyle(real?.manifest, labelVisible);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -18,7 +19,7 @@ export default function CTPanel() {
     const ctx = canvas.getContext("2d")!;
     const [X, Y] = real.manifest.dims;
     const img = renderRealSlice(tp.ct, tp.seg, real.manifest, slice,
-      { window, level, showTumor, mri: tp.mri, mode, fusion: fusionAlpha });
+      { window, level, labelStyle, mri: tp.mri, mode, fusion: fusionAlpha });
     const tmp = document.createElement("canvas");
     tmp.width = X; tmp.height = Y;
     tmp.getContext("2d")!.putImageData(img, 0, 0);
@@ -26,7 +27,7 @@ export default function CTPanel() {
     ctx.imageSmoothingEnabled = true;
     ctx.clearRect(0, 0, SIZE, SIZE);
     ctx.drawImage(tmp, 0, 0, SIZE, SIZE);
-  }, [slice, window, level, showTumor, real, tp, mode, fusionAlpha]);
+  }, [slice, window, level, labelVisible, real, tp, mode, fusionAlpha]);
 
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault();
@@ -44,11 +45,8 @@ export default function CTPanel() {
   const z = m ? sliceWorldZ(slice, m) : 0;
   const recon = m ? `${m.spacingMm[2].toFixed(1)}mm · ${m.modality}` : "—";
   const hasSeg = !!tp?.seg;
-  const segHint = m?.labels
-    ? Object.entries(m.labels)
-        .map(([k, v]) => `${k === "2" ? "amber" : "teal"} = ${v}`)
-        .join(", ")
-    : "";
+  const segOn = hasSeg && Object.values(labelVisible).some(Boolean);
+  const segHint = m?.labels ? Object.values(m.labels).join(" · ") : "";
 
   return (
     <section className="ct-panel" aria-label="Original CT projection">
@@ -79,7 +77,7 @@ export default function CTPanel() {
           </div>
           <div className="corner br dim">
             <div>FUSED SEG</div>
-            <div>{hasSeg ? (showTumor ? "ON" : "OFF") : "N/A"}</div>
+            <div>{hasSeg ? (segOn ? "ON" : "OFF") : "N/A"}</div>
           </div>
         </div>
       </div>

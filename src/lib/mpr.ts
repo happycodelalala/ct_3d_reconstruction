@@ -2,7 +2,7 @@
 // oblique projections, plus a maximum-intensity projection (MIP), via a common
 // world-space sampler over the loaded volume.
 
-import { srcLum01, type DisplayMode, type Manifest } from "./dataset";
+import { srcLum01, SEG_TINT, type DisplayMode, type LabelStyle, type Manifest } from "./dataset";
 
 export type PlaneKind = "coronal" | "sagittal" | "oblique";
 
@@ -87,13 +87,12 @@ export interface ReformatResult {
   basis: PlaneBasis;
 }
 
-function shade(lum: number, label: number, showTumor: boolean, transparentAir: boolean) {
+function shade(lum: number, label: number, labelStyle: LabelStyle, transparentAir: boolean) {
   let r = lum, g = lum, b = lum, a = 255;
   if (lum <= 2 && transparentAir) a = 0;
-  if (showTumor && label === 2) {
-    r = mix(lum, 255, 0.62); g = mix(lum, 176, 0.62); b = mix(lum, 84, 0.4); a = 255;
-  } else if (showTumor && label === 1) {
-    r = mix(lum, 40, 0.28); g = mix(lum, 110, 0.28); b = mix(lum, 120, 0.28);
+  const c = label ? labelStyle[label] : undefined;
+  if (c) {
+    r = mix(lum, c[0], SEG_TINT); g = mix(lum, c[1], SEG_TINT); b = mix(lum, c[2], SEG_TINT); a = 255;
   }
   return [r, g, b, a] as const;
 }
@@ -103,7 +102,7 @@ export function renderReformat(
   sampler: Sampler,
   ext: [number, number, number],
   cross: { x: number; y: number; z: number },
-  opts: { angleDeg: number; showTumor: boolean; base?: number; transparentAir?: boolean }
+  opts: { angleDeg: number; labelStyle: LabelStyle; base?: number; transparentAir?: boolean }
 ): ReformatResult {
   const basis = planeBasis(kind, ext, cross, opts.angleDeg);
   const { C, U, uExt, V, vExt, cu, cv } = basis;
@@ -119,7 +118,7 @@ export function renderReformat(
     for (let px = 0; px < W; px++) {
       const u = (px / (W - 1) - 0.5) * 2 * uExt;
       const s = sampler(C[0] + u * U[0] + v * V[0], C[1] + u * U[1] + v * V[1], C[2] + u * U[2] + v * V[2]);
-      const [r, g, b, a] = shade(s.lum, s.label, opts.showTumor, !!opts.transparentAir);
+      const [r, g, b, a] = shade(s.lum, s.label, opts.labelStyle, !!opts.transparentAir);
       const di = (py * W + px) * 4;
       d[di] = r; d[di + 1] = g; d[di + 2] = b; d[di + 3] = a;
     }
@@ -138,7 +137,7 @@ export function renderMIP(
   sampler: Sampler,
   ext: [number, number, number],
   cross: { x: number; y: number; z: number },
-  opts: { showTumor: boolean; base?: number; steps?: number }
+  opts: { labelStyle: LabelStyle; base?: number; steps?: number }
 ): ReformatResult {
   const [ex, ey, ez] = ext;
   const base = opts.base ?? 240;
@@ -162,9 +161,10 @@ export function renderMIP(
         if (s.label === 2) tumorHit++;
       }
       let r = maxLum, g = maxLum, b = maxLum;
-      if (opts.showTumor && tumorHit > 0) {
+      const tc = opts.labelStyle[2]; // MIP highlights the tumour label (2) when visible
+      if (tc && tumorHit > 0) {
         const t = Math.min(1, tumorHit / 6) * 0.7;
-        r = mix(maxLum, 255, t); g = mix(maxLum, 176, t); b = mix(maxLum, 84, t * 0.7);
+        r = mix(maxLum, tc[0], t); g = mix(maxLum, tc[1], t); b = mix(maxLum, tc[2], t * 0.9);
       }
       const di = (py * W + px) * 4;
       d[di] = r; d[di + 1] = g; d[di + 2] = b; d[di + 3] = 255;
