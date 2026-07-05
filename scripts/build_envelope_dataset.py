@@ -26,9 +26,8 @@ import SimpleITK as sitk
 from scipy.ndimage import binary_fill_holes
 from skimage import measure
 
-from register_ct_mr import register_cached, load_ct_mr
-from preprocess_hn_mri import (output_grid, to_zyx, window_ct_u8, window_mr_u8,
-                               mesh_from_mask, OUT_XY, CT_HU_LO, CT_HU_HI)
+from preprocess_hn_mri import (prepare_output_volumes, to_zyx, mesh_from_mask,
+                               OUT_XY, CT_HU_LO, CT_HU_HI)
 
 # layer colours (RGB 0..255): body blue, bone cream, organ purple, GT tumour green,
 # predicted tumour amber (so a GT-vs-segmentation comparison reads at a glance).
@@ -69,14 +68,7 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
 
     print(f"[{ds_id}] loading + registering…")
-    ct, mr = load_ct_mr(a.case_dir)
-    tx = register_cached(ct, mr, case)
-    ref, out_size, out_spacing = output_grid(ct)
-
-    # intensity volumes on the shared output grid
-    ct_hu = to_zyx(sitk.Resample(ct, ref, sitk.Transform(), sitk.sitkLinear, 0.0, sitk.sitkFloat32))
-    ct_u8 = window_ct_u8(ct_hu)
-    mr_u8 = window_mr_u8(to_zyx(sitk.Resample(mr, ref, tx, sitk.sitkLinear, 0.0, sitk.sitkFloat32)))
+    ref, out_size, out_spacing, ct_hu, ct_u8, mr_u8 = prepare_output_volumes(a.case_dir)
 
     # envelope layers
     body = body_mask(ct_hu)

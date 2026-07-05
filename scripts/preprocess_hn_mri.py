@@ -88,11 +88,24 @@ def mesh_from_mask(mask_zyx, ext, sigma=0.6, step=1):
 
 
 # --------------------------------------------------------------------- emit
+def prepare_output_volumes(case_dir):
+    """Load CT+MR, cached-register MR->CT, and resample both onto the shared output grid.
+    Returns (ref, out_size, out_spacing, ct_hu, ct_u8, mr_u8) — the common setup every
+    dataset builder needs, so registration + windowing isn't reimplemented per script. The
+    MR goes straight into the output grid via the transform (ref shares the CT's physical
+    space) — one interpolation, not a second pass through a full-res CT-grid intermediate."""
+    ct, mr = load_ct_mr(case_dir)
+    tx = register_cached(ct, mr, os.path.basename(os.path.normpath(case_dir)))
+    ref, out_size, out_spacing = output_grid(ct)
+    ct_hu = to_zyx(sitk.Resample(ct, ref, sitk.Transform(), sitk.sitkLinear, 0.0, sitk.sitkFloat32))
+    mr_u8 = window_mr_u8(to_zyx(sitk.Resample(mr, ref, tx, sitk.sitkLinear, 0.0, sitk.sitkFloat32)))
+    return ref, out_size, out_spacing, ct_hu, window_ct_u8(ct_hu), mr_u8
+
+
 def build(case_dir, out_dir, ds_id, title, roi_glob, roi_label):
     os.makedirs(out_dir, exist_ok=True)
     print(f"[{ds_id}] loading CT + MR…")
-    ct, mr = load_ct_mr(case_dir)
-    tx = register_cached(ct, mr, os.path.basename(os.path.normpath(case_dir)))
+    ref, out_size, out_spacing, _, ct_u8, mr_u8 = prepare_output_volumes(case_dir)
 
     # stand-in "tumour" mask (an OAR, defined on the CT grid)
     cand = glob.glob(os.path.join(case_dir, roi_glob))
@@ -113,13 +126,7 @@ def build(case_dir, out_dir, ds_id, title, roi_glob, roi_label):
         "tumorVoxels": vox, "bboxMm": bbmm,
     }
 
-    # resample everything into the shared output grid
-    ref, out_size, out_spacing = output_grid(ct)
-    ct_u8 = window_ct_u8(to_zyx(sitk.Resample(ct, ref, sitk.Transform(), sitk.sitkLinear, 0.0, sitk.sitkFloat32)))
-    # MR straight into the output grid via the registration transform (ref shares the
-    # CT's physical space) — one interpolation, not a second pass through a full-res
-    # CT-grid intermediate.
-    mr_u8 = window_mr_u8(to_zyx(sitk.Resample(mr, ref, tx, sitk.sitkLinear, 0.0, sitk.sitkFloat32)))
+    # resample the ROI mask into the shared output grid (CT/MR done in prepare_output_volumes)
     mask_out = to_zyx(sitk.Resample(man, ref, sitk.Transform(), sitk.sitkNearestNeighbor, 0, sitk.sitkUInt8)) > 0
     if mask_out.sum() == 0:
         raise SystemExit("mask empty after resample — check the ROI/params")

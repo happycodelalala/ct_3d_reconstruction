@@ -2,7 +2,7 @@
 // oblique projections, plus a maximum-intensity projection (MIP), via a common
 // world-space sampler over the loaded volume.
 
-import { srcLum01, SEG_TINT, type DisplayMode, type LabelStyle, type Manifest } from "./dataset";
+import { srcLum01, mix, tintPixel, type DisplayMode, type LabelStyle, type Manifest } from "./dataset";
 
 export type PlaneKind = "coronal" | "sagittal" | "oblique";
 
@@ -91,9 +91,7 @@ function shade(lum: number, label: number, labelStyle: LabelStyle, transparentAi
   let r = lum, g = lum, b = lum, a = 255;
   if (lum <= 2 && transparentAir) a = 0;
   const c = label ? labelStyle[label] : undefined;
-  if (c) {
-    r = mix(lum, c[0], SEG_TINT); g = mix(lum, c[1], SEG_TINT); b = mix(lum, c[2], SEG_TINT); a = 255;
-  }
+  if (c) { [r, g, b] = tintPixel(lum, c); a = 255; }
   return [r, g, b, a] as const;
 }
 
@@ -176,8 +174,4 @@ export function renderMIP(
     Math.max(0, Math.min(1, 1 - cross.z)),
   ];
   return { img, aspect, crossUV, basis };
-}
-
-function mix(a: number, b: number, t: number): number {
-  return Math.round(a + (b - a) * t);
 }

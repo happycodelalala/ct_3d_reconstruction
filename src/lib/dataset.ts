@@ -74,15 +74,29 @@ export type LabelStyle = Record<number, [number, number, number]>;
 
 export const SEG_TINT = 0.55; // overlay tint strength (mix of greyscale toward the label colour)
 
+// One place to resolve a label's colour: the manifest's labelColors, else the palette.
+export function labelColor(m: Manifest | undefined, label: number): [number, number, number] {
+  return m?.labelColors?.[String(label)] ?? LABEL_PALETTE[(label - 1) % LABEL_PALETTE.length];
+}
+
 export function buildLabelStyle(m: Manifest | undefined, visible: Record<number, boolean>): LabelStyle {
   const out: LabelStyle = {};
   if (!m?.labels) return out;
   for (const key of Object.keys(m.labels)) {
     const lab = Number(key);
     if (visible[lab] === false) continue; // undefined defaults to visible
-    out[lab] = m.labelColors?.[key] ?? LABEL_PALETTE[(lab - 1) % LABEL_PALETTE.length];
+    out[lab] = labelColor(m, lab);
   }
   return out;
+}
+
+// Blend a greyscale luminance toward a label colour by SEG_TINT (the seg overlay tint).
+export function mix(a: number, b: number, t: number): number {
+  return Math.round(a + (b - a) * t);
+}
+
+export function tintPixel(lum: number, c: [number, number, number]): [number, number, number] {
+  return [mix(lum, c[0], SEG_TINT), mix(lum, c[1], SEG_TINT), mix(lum, c[2], SEG_TINT)];
 }
 
 // Which volume the 2D/3D renderers draw from. "fusion" blends CT+MR.
@@ -224,16 +238,10 @@ export function renderRealSlice(
       let r = lum, g = lum, b = lum, a = 255;
       if (lum <= 2 && opts.transparentAir) a = 0;
       const c = label ? opts.labelStyle[label] : undefined;
-      if (c) {
-        r = mix(lum, c[0], SEG_TINT); g = mix(lum, c[1], SEG_TINT); b = mix(lum, c[2], SEG_TINT); a = 255;
-      }
+      if (c) { [r, g, b] = tintPixel(lum, c); a = 255; }
       const di = (cy * X + ox) * 4;
       data[di] = r; data[di + 1] = g; data[di + 2] = b; data[di + 3] = a;
     }
   }
   return img;
-}
-
-function mix(a: number, b: number, t: number): number {
-  return Math.round(a + (b - a) * t);
 }

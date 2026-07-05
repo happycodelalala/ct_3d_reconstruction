@@ -1,5 +1,5 @@
 import { useStore } from "../store";
-import { LABEL_PALETTE, type DisplayMode } from "../lib/dataset";
+import { labelColor, type DisplayMode } from "../lib/dataset";
 
 const MODES: { m: DisplayMode; label: string }[] = [
   { m: "ct", label: "CT" },
@@ -106,7 +106,7 @@ export default function ControlRail() {
         {hasSeg && m?.labels &&
           Object.entries(m.labels).map(([k, name]) => {
             const lab = Number(k);
-            const rgb = m.labelColors?.[k] ?? LABEL_PALETTE[(lab - 1) % LABEL_PALETTE.length];
+            const rgb = labelColor(m, lab);
             const on = s.labelVisible[lab] !== false;
             return (
               <Toggle
