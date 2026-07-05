@@ -100,6 +100,12 @@ reflects measured reality, not just literature.
 
 ## 6. Open items to validate **live on the laptop** (don't guess these)
 
+> **RESOLVED** — install + API are now known and captured as a runbook:
+> [docs/medsam2-setup.md](medsam2-setup.md). Notably: entry point
+> `build_sam2_video_predictor_npz` (inits state from a numpy/tensor volume directly),
+> the model is **512²** (not 1024²), no `pip install -e` needed, and the seed prompt uses
+> `add_new_mask`. Original open list kept below for the record.
+
 The MedSAM2 API is the part we finalize when we can run it:
 - exact **install** (package name, pinned versions, CUDA wheel index) and **checkpoint/config**;
 - 3D/video predictor entry point (`build_sam2_video_predictor`?) and how to **init state from a

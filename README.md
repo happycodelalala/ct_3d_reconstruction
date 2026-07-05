@@ -270,6 +270,23 @@ tumour stand-in** — HaN-Seg ships no GTV) into one shared grid, and emits the 
 assets with a second `mri` volume per timepoint. Swap the OAR for a real tumour mask
 later; nothing downstream changes.
 
+**MedSAM2 zero-shot segmentation (optional).** Instead of the ground-truth OAR, you can
+produce the mask with MedSAM2 — a single seed slice propagated to a 3D mask — and feed *that*
+into `preprocess_hn_mri.py`. On `case_01` the mechanism reaches **Dice ≈0.89** (CT mask-seed,
+tight ROI crop). Full install + usage runbook: **[docs/medsam2-setup.md](docs/medsam2-setup.md)**.
+
+```bash
+# after the MedSAM2 setup in that doc (clone + checkpoint + venv):
+.venv/bin/python scripts/medsam2_seed_test.py \
+  --case-dir hanseg_data/HaN-Seg/set_1/case_01 --modality ct --prompt mask --crop-margin-mm 6 --surface
+
+# view the prediction in the workstation (drop-in as the tumour mask)
+PRED=$(readlink -f runs/medsam2_seed/case_01_ct_mask/pred_mask.nrrd)
+.venv/bin/python scripts/preprocess_hn_mri.py --case-dir hanseg_data/HaN-Seg/set_1/case_01 \
+  --id hanseg_case_01_medsam2 --roi-label "MedSAM2 mandible" --roi-glob "$PRED"
+npm run data:index
+```
+
 > **Licensing:** HaN-Seg is CC-BY-NC-ND — keep raw and derived assets local (both are
 > gitignored). Do not redistribute processed assets.
 
