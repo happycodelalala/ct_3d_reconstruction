@@ -29,12 +29,17 @@ function buildEntry(id) {
   }
   const labels = m.labels || {};
   const tps = Array.isArray(m.timepoints) ? m.timepoints : [];
-  const hasTumor = !!labels["2"] || tps.some((tp) => tp.tumorMesh);
+  // Derive badges from label NAMES, not positional keys — multi-label datasets put
+  // body/bone/organ/tumour on different numbers, so "label 1 == organ" was wrong.
+  const named = Object.values(labels);
+  const isTumour = (n) => /tumou?r|lesion|gtv|segmentation|ground.?truth/i.test(n);
+  const hasTumor = named.some(isTumour) || tps.some((tp) => tp.tumorMesh);
+  const organ = named.find((n) => !isTumour(n) && !/body|bone/i.test(n)) || null;
   return {
     id: m.id || id,
     base: `/data/${id}`,
     title: m.title || id,
-    organ: labels["1"] || null,
+    organ,
     modality: m.modality || "—",
     source: m.source || null,
     timepoints: tps.length,

@@ -99,6 +99,24 @@ export function tintPixel(lum: number, c: [number, number, number]): [number, nu
   return [mix(lum, c[0], SEG_TINT), mix(lum, c[1], SEG_TINT), mix(lum, c[2], SEG_TINT)];
 }
 
+// Window a 0..1 source luminance to 0..255 by level/width. Shared by the axial renderer
+// and the MPR sampler so windowing is defined once.
+export function windowLum(v01: number, level: number, window: number): number {
+  const lo = level - window / 2;
+  const hi = level + window / 2;
+  return Math.max(0, Math.min(255, Math.round(((v01 - lo) / Math.max(1e-4, hi - lo)) * 255)));
+}
+
+// Greyscale luminance + seg label -> RGBA, with the label tint and air transparency.
+// Shared by renderRealSlice (axial) and renderReformat (MPR).
+export function shade(lum: number, label: number, labelStyle: LabelStyle, transparentAir: boolean) {
+  let r = lum, g = lum, b = lum, a = 255;
+  if (lum <= 2 && transparentAir) a = 0;
+  const c = label ? labelStyle[label] : undefined;
+  if (c) { [r, g, b] = tintPixel(lum, c); a = 255; }
+  return [r, g, b, a] as const;
+}
+
 // Which volume the 2D/3D renderers draw from. "fusion" blends CT+MR.
 export type DisplayMode = "ct" | "mri" | "fusion";
 
@@ -224,21 +242,13 @@ export function renderRealSlice(
   const [X, Y] = m.dims;
   const img = new ImageData(X, Y);
   const data = img.data;
-  const lo = opts.level - opts.window / 2;
-  const hi = opts.level + opts.window / 2;
-  const inv = 1 / Math.max(1e-4, hi - lo);
 
   for (let oy = 0; oy < Y; oy++) {
     const cy = Y - 1 - oy; // flip so +Y is up
     for (let ox = 0; ox < X; ox++) {
       const vi = ox + X * (oy + Y * k);
-      const src = srcLum01(ct, opts.mri, vi, opts.mode, opts.fusion);
-      const lum = Math.max(0, Math.min(255, Math.round((src - lo) * inv * 255)));
-      const label = seg ? seg[vi] : 0;
-      let r = lum, g = lum, b = lum, a = 255;
-      if (lum <= 2 && opts.transparentAir) a = 0;
-      const c = label ? opts.labelStyle[label] : undefined;
-      if (c) { [r, g, b] = tintPixel(lum, c); a = 255; }
+      const lum = windowLum(srcLum01(ct, opts.mri, vi, opts.mode, opts.fusion), opts.level, opts.window);
+      const [r, g, b, a] = shade(lum, seg ? seg[vi] : 0, opts.labelStyle, !!opts.transparentAir);
       const di = (cy * X + ox) * 4;
       data[di] = r; data[di + 1] = g; data[di + 2] = b; data[di + 3] = a;
     }

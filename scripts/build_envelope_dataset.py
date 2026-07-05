@@ -29,10 +29,8 @@ from skimage import measure
 from preprocess_hn_mri import (prepare_output_volumes, to_zyx, mesh_from_mask,
                                OUT_XY, CT_HU_LO, CT_HU_HI)
 
-# layer colours (RGB 0..255): body blue, bone cream, organ purple, GT tumour green,
-# predicted tumour amber (so a GT-vs-segmentation comparison reads at a glance).
+# fixed layer colours (RGB 0..255); the tumour layer's colour comes from --tumour-color
 C_BODY, C_BONE, C_ORGAN = [90, 140, 200], [222, 216, 198], [150, 110, 205]
-C_TUMOUR_GT, C_TUMOUR_PRED = [90, 200, 110], [255, 150, 70]
 
 
 def body_mask(ct_hu_zyx):

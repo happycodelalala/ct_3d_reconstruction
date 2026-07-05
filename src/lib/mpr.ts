@@ -2,18 +2,12 @@
 // oblique projections, plus a maximum-intensity projection (MIP), via a common
 // world-space sampler over the loaded volume.
 
-import { srcLum01, mix, tintPixel, type DisplayMode, type LabelStyle, type Manifest } from "./dataset";
+import { srcLum01, mix, windowLum, shade, type DisplayMode, type LabelStyle, type Manifest } from "./dataset";
 
 export type PlaneKind = "coronal" | "sagittal" | "oblique";
 
-// sample the volume at a world point -> { lum:0..255, label:0|1|2 }
+// sample the volume at a world point -> { lum:0..255, label }
 export type Sampler = (wx: number, wy: number, wz: number) => { lum: number; label: number };
-
-function windowLum(v01: number, level: number, window: number): number {
-  const lo = level - window / 2;
-  const hi = level + window / 2;
-  return Math.max(0, Math.min(255, Math.round(((v01 - lo) / Math.max(1e-4, hi - lo)) * 255)));
-}
 
 // ---- real volume (one timepoint of a dataset) ----
 export function realSampler(
@@ -85,14 +79,6 @@ export interface ReformatResult {
   aspect: number; // width / height
   crossUV: [number, number]; // crosshair position in 0..1 image coords
   basis: PlaneBasis;
-}
-
-function shade(lum: number, label: number, labelStyle: LabelStyle, transparentAir: boolean) {
-  let r = lum, g = lum, b = lum, a = 255;
-  if (lum <= 2 && transparentAir) a = 0;
-  const c = label ? labelStyle[label] : undefined;
-  if (c) { [r, g, b] = tintPixel(lum, c); a = 255; }
-  return [r, g, b, a] as const;
 }
 
 export function renderReformat(

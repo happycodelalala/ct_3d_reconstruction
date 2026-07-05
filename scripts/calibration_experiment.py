@@ -25,7 +25,7 @@ from scipy.stats import rankdata
 
 # reuse the validated segmentation engine + the shared recall-safe primitive
 from medsam2_seed_test import prepare_case, segment, dice
-from triage_pipeline import recall_safe_envelopes
+from triage_pipeline import recall_safe_envelopes, recall_precision
 
 
 def sampled_seed_slices(gt_full, k, rng, central=False):
@@ -126,16 +126,11 @@ def main():
     # Since the model's error is under-segmentation, a few-mm dilation (in physical space,
     # spacing-aware) trades precision for the recall triage needs. This targets the actual
     # failure (silent misses) directly, where variance-uncertainty could not.
-    def recall_prec(mask):
-        inter = float((mask & gt).sum())
-        return (round(inter / gt.sum(), 4) if gt.sum() else float("nan"),
-                round(inter / mask.sum(), 4) if mask.sum() else float("nan"))
-
     radii = [0.0] + [float(x) for x in a.dilate_mm.split(",") if x.strip()]
     envelopes = recall_safe_envelopes(consensus, radii, ctx.grid_img.GetSpacing())
     res["recall_safe"] = []
     for r in radii:
-        rec, prec = recall_prec(envelopes[r])
+        rec, prec = recall_precision(envelopes[r], ctx.gt_full)
         res["recall_safe"].append({"dilate_mm": r, "recall": rec, "precision": prec,
                                    "dice": round(dice(envelopes[r].astype(np.uint8), ctx.gt_full), 4)})
     json.dump(res, open(os.path.join(a.out, "calibration.json"), "w"), indent=2)
