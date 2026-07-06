@@ -293,7 +293,11 @@ npm run data:index
 **multi-label envelope** — body (CT mask), bone (CT threshold), organ (all-OAR union), and a
 tumour layer — into one dataset the workstation renders as **independently-toggleable layers**
 (2D overlays + 3D shells, one colour each). Point the tumour layer at the ground-truth OAR *and*
-at the MedSAM2 result to get two comparable cases. The triage design + the **recall-safe
+at the MedSAM2 result to get two comparable cases. **The tumour layer here uses the brainstem OAR
+as a hypothetical stand-in** — HaN-Seg ships no real lesion, so the brainstem plays the role of a
+tumour to exercise the whole segmentation pipeline end-to-end on real 3D data. The brainstem is
+**not the target — tumour segmentation is**; point `--tumour` at a real GTV mask once patient data
+is available and nothing downstream changes. The triage design + the **recall-safe
 envelope** behind the tumour layer: **[docs/tumour-triage-pipeline.md](docs/tumour-triage-pipeline.md)**.
 
 ```bash
@@ -303,9 +307,9 @@ envelope** behind the tumour layer: **[docs/tumour-triage-pipeline.md](docs/tumo
 # two full-envelope cases: ground truth (green) vs segmentation (amber)
 BS=hanseg_data/HaN-Seg/set_1/case_01/case_01_OAR_Brainstem.seg.nrrd
 .venv/bin/python scripts/build_envelope_dataset.py --case-dir hanseg_data/HaN-Seg/set_1/case_01 \
-  --tumour "$BS" --tumour-label "brainstem (ground truth)" --tumour-color 90,200,110 --id hanseg_case_01_gt
+  --tumour "$BS" --tumour-label "tumour (ground truth)" --tumour-color 90,200,110 --id hanseg_case_01_gt
 .venv/bin/python scripts/build_envelope_dataset.py --case-dir hanseg_data/HaN-Seg/set_1/case_01 \
-  --tumour runs/triage/case_01_brainstem_mr/envelope.nrrd --tumour-label "brainstem (segmentation)" \
+  --tumour runs/triage/case_01_brainstem_mr/envelope.nrrd --tumour-label "tumour (segmentation)" \
   --tumour-color 255,150,70 --id hanseg_case_01_seg
 npm run data:index
 ```

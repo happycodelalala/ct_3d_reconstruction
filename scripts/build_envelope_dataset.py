@@ -1,7 +1,7 @@
 """Build a multi-label 'envelopes' dataset for the front-end: body + tumour + organ.
 
-Assembles three overlay layers of one HaN-Seg case into ONE multi-label seg volume
-(1 = body, 2 = tumour envelope, 3 = organ envelope) plus one isosurface mesh per layer, in
+Assembles four overlay layers of one HaN-Seg case into ONE multi-label seg volume
+(1 = body, 4 = bone, 3 = organ, 2 = tumour) plus one isosurface mesh per layer, in
 the workstation's manifest format with per-label colours. The front-end renders them as
 independently-toggleable layers (2D overlays + 3D shells).
 
@@ -54,7 +54,7 @@ def main():
     ap = argparse.ArgumentParser(description="Build a body+tumour+organ multi-label dataset.")
     ap.add_argument("--case-dir", required=True)
     ap.add_argument("--tumour", required=True, help="tumour NRRD on the CT grid (GT mask or segmentation result)")
-    ap.add_argument("--tumour-label", default="tumour envelope", help="name for the tumour layer")
+    ap.add_argument("--tumour-label", default="tumour", help="name for the tumour layer")
     ap.add_argument("--tumour-color", default="255,150,70", help="tumour layer RGB (e.g. 90,200,110 for GT green)")
     ap.add_argument("--bone-hu", type=float, default=200.0, help="CT HU threshold for the bone layer")
     ap.add_argument("--id", default=None)
@@ -122,9 +122,8 @@ def main():
         "hasSegmentation": True,
         "labels": labels_map,
         "labelColors": label_colors,
-        "clinicalNote": ("Full envelope: body (CT), bone (CT), organ (union of all OARs), and a "
-                         f"tumour-stand-in layer ({a.tumour_label}). The 'tumour' is an OAR "
-                         "stand-in, not a real lesion."),
+        "clinicalNote": ("Full envelope: body (CT), bone (CT), organ (union of all OARs), "
+                         f"and the {a.tumour_label} layer."),
         "timepoints": [{
             "id": "t0", "label": "CT + MR T1",
             "ct": "ct.bin.gz", "mri": "mri.bin.gz", "seg": "seg.bin.gz",
