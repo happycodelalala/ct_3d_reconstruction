@@ -56,6 +56,10 @@ def main():
     ap.add_argument("--tumour", required=True, help="tumour NRRD on the CT grid (GT mask or segmentation result)")
     ap.add_argument("--tumour-label", default="tumour", help="name for the tumour layer")
     ap.add_argument("--tumour-color", default="255,150,70", help="tumour layer RGB (e.g. 90,200,110 for GT green)")
+    ap.add_argument("--organ-glob", default="*OAR_*.nrrd",
+                    help="glob for organ mask(s), unioned (>0) into the organ layer. Default = "
+                         "HaN-Seg's shipped OARs; for a new patient point it at an organ "
+                         "segmenter's output, e.g. an absolute path to TotalSegmentator NIfTIs")
     ap.add_argument("--bone-hu", type=float, default=200.0, help="CT HU threshold for the bone layer")
     ap.add_argument("--id", default=None)
     ap.add_argument("--title", default=None)
@@ -72,8 +76,13 @@ def main():
     body = body_mask(ct_hu)
     bone = (ct_hu > a.bone_hu) & body           # skeleton = dense CT inside the body
     organ = np.zeros(body.shape, bool)
-    for f in sorted(glob.glob(os.path.join(a.case_dir, "*OAR_*.nrrd"))):
+    organ_files = sorted(glob.glob(os.path.join(a.case_dir, a.organ_glob)))
+    if not organ_files:
+        raise SystemExit(f"no organ masks match {a.organ_glob!r} in {a.case_dir} "
+                         "(a new patient needs an organ segmenter's output — see README)")
+    for f in organ_files:
         organ |= _to_grid(f, ref)
+    print(f"  organ layer: union of {len(organ_files)} mask(s)")
     tumour_color = [int(x) for x in a.tumour_color.split(",")]
 
     # (label, name, colour, mask, mesh-step). Painted in THIS order so later entries win
