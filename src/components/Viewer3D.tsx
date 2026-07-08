@@ -88,15 +88,12 @@ function Scene() {
         if (!c) return null;
         const col = rgbCss(c);
         if (label === 2) {
+          // solid glowing tumour (no halo shell — it scaled about the world origin, not
+          // the tumour centroid, so it rendered as a one-sided offset ghost)
           return (
-            <group key={label}>
-              <mesh geometry={geo}>
-                <meshStandardMaterial color={col} emissive={col} emissiveIntensity={0.22} roughness={0.4} metalness={0.05} />
-              </mesh>
-              <mesh geometry={geo} scale={1.05}>
-                <meshBasicMaterial color={col} transparent opacity={0.08} side={THREE.BackSide} depthWrite={false} />
-              </mesh>
-            </group>
+            <mesh key={label} geometry={geo}>
+              <meshStandardMaterial color={col} emissive={col} emissiveIntensity={0.22} roughness={0.4} metalness={0.05} />
+            </mesh>
           );
         }
         // FrontSide + renderOrder keeps the translucent shell's look stable as the camera orbits
