@@ -277,7 +277,7 @@ export default function Viewer3D() {
         <Scene />
       </Rig>
 
-      <OrbitControls enablePan={false} minDistance={1.6} maxDistance={7} enableDamping dampingFactor={0.08} />
+      <OrbitControls enablePan screenSpacePanning minDistance={1.6} maxDistance={7} enableDamping dampingFactor={0.08} />
     </Canvas>
   );
 }
