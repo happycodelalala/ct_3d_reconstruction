@@ -233,7 +233,9 @@ export async function loadDataset(base: string): Promise<RealDataset> {
 // ---------------------------------------------------------------------------
 export function voxelToWorld(v: number, axis: number, m: Manifest): number {
   const dim = m.dims[axis];
-  return ((v / (dim - 1)) - 0.5) * 2 * m.worldExtent[axis];
+  // Math.max(1, dim-1) guards a single-slice axis (dim===1) from 0/0=NaN — same
+  // single-slice guard as store.ts::sliceFraction; identical for all real data (dim≫1).
+  return ((v / Math.max(1, dim - 1)) - 0.5) * 2 * m.worldExtent[axis];
 }
 
 export function sliceWorldZ(k: number, m: Manifest): number {
