@@ -160,7 +160,7 @@ These are the concrete deduplication/alignment targets this doc-pair is meant to
 6. **Label-1 semantics vary.** Label 2 = tumour is universal; label 1 = "body" in envelope datasets but "kidney"/"lung"/organ in legacy builders. Documented canonically in [schema.md](schema.md#labels--colors) — don't assume label 1 without checking `labels`.
 7. **No runtime manifest validation.** Consider a lightweight load-time schema check in `dataset.ts` so malformed manifests fail with a clear message instead of a deep `undefined` access.
 8. **Windowing conventions are split** (`defaultWL`/`mriWL` normalized 0..1 for the UI vs `storageWindowHU`/per-builder HU windows at preprocess). Documented, not yet unified.
-9. **Picker badge derivation is fragile — active bug.** `build_index.cjs:35-37` derives `hasTumor`/`organ` from a label-_name_ regex. The ML dataset `hanseg_case_01_seg` names its tumour layer `brainstem (MedSAM2)`, which matches no tumour keyword, so `index.json` records `hasTumor: false` and mis-picks that tumour layer as the `organ` badge. Root cause: name heuristic + JS numeric key ordering (label 2 sorts before label 3 in `Object.values`). **Fix:** derive badges from the canonical label integers (2 = tumour, 3 = organ) for envelope datasets rather than name matching.
+9. ~~Picker badge derivation is fragile.~~ **RESOLVED 2026-07-09.** `build_index.cjs` derived `hasTumor`/`organ` from a label-_name_ regex, so the ML dataset's tumour (`brainstem (MedSAM2)`) was mislabelled (`hasTumor:false`, tumour picked as `organ`). Now derives from the canonical label integers (2 = tumour, 3 = organ), aligned with the frontend's `label === 2` invariant. Follow-up (open): converge `StatsPanel`'s separate tumour-detection path too — see [TODO.md](TODO.md).
 
 ---
 

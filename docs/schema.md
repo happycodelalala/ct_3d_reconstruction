@@ -140,7 +140,7 @@ Built by `scripts/build_index.cjs` (`npm run data:index`) by scanning every `man
 | `count` | number | `datasets.length`. |
 | `datasets[]` | `DatasetEntry[]` | Rows below. |
 
-**`DatasetEntry`:** `id`, `base` (`/data/<id>`), `title`, `organ` (string\|null), `modality`, `source`, `timepoints` (count), `hasSegmentation` (bool), `hasTumor` (bool). **Badge derivation is by label _name_, not key** (`build_index.cjs:32-37`): `hasTumor` if any label name matches `/tumou?r|lesion|gtv|segmentation|ground.?truth/i` (or a `tumorMesh` exists); `organ` = first label name that is neither tumour-like nor `body`/`bone`. **Caveat (active bug):** a tumour whose name lacks a keyword (e.g. `brainstem (MedSAM2)`) is misclassified — `hasTumor:false` and the tumour picked as `organ`. See [§10](#10-known-contract-drift).
+**`DatasetEntry`:** `id`, `base` (`/data/<id>`), `title`, `organ` (string\|null), `modality`, `source`, `timepoints` (count), `hasSegmentation` (bool), `hasTumor` (bool). **Badge derivation follows the canonical label integers** (`build_index.cjs:30-42`, aligned with the frontend's `label === 2` = tumour invariant): `hasTumor` if label `2` exists (or a legacy `tumorMesh`); `organ` = the canonical organ label `3`, else the first non-tumour, non-`body`/`bone` label (covers legacy datasets where label 1 = kidney/lung). Earlier a label-name regex was used; it misclassified tumours whose names lacked a keyword (e.g. `brainstem (MedSAM2)`) — fixed 2026-07-09.
 
 ---
 
@@ -259,7 +259,7 @@ Tracked in full in [design.md §8](design.md#8-known-drift--alignment-worklist).
 
 1. **README `## How it works` asset/manifest example is stale** vs the real files (`ct_t*` naming, missing `mri`/`labelColors`/`meshes[]`/`storageWindowHU`/`mriWL`). This doc supersedes it.
 2. **Written-but-unread fields:** `storageWindowHU`, top-level `meshes` (always null).
-6. **Picker badges misclassify the ML case — active bug.** `build_index.cjs` name-regex records `hanseg_case_01_seg` as `hasTumor:false` and sets `organ:"brainstem (MedSAM2)"` (its tumour layer). Derive badges from canonical label ints instead. See [design.md §8](design.md#8-known-drift--alignment-worklist).
+6. ~~Picker badges misclassify the ML case.~~ **RESOLVED 2026-07-09** — `build_index.cjs` now derives badges from canonical label ints (`label 2` = tumour, `3` = organ), aligned with the frontend's `label === 2` invariant. `index.json` regenerated.
 3. **Two mesh mechanisms:** legacy `tumorMesh`/`organMesh` (labels 2/1) vs `timepoints[].meshes[]` (preferred).
 4. **No runtime validation** — malformed manifests fail lazily in the browser.
 5. **Label 1 is not stable across builders** — read `labels`.

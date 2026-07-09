@@ -8,10 +8,10 @@ Companion tracking: this list is the actionable form of [design.md §8](design.m
 
 ## P1 — Bugs
 
-- [ ] **Picker badges misclassify the ML dataset.** `public/data/index.json` currently records `hanseg_case_01_seg` as `"hasTumor": false` with `"organ": "brainstem (MedSAM2)"` — but that layer *is* the tumour.
-  - **Root cause:** `build_index.cjs:35-37` derives `hasTumor`/`organ` from a label-**name** regex (`/tumou?r|lesion|gtv|segmentation|ground.?truth/i`). The GT case only passes because its label is named `…(ground truth)`; the ML tumour named `brainstem (MedSAM2)` matches nothing. Compounded by JS numeric key ordering (label 2 sorts before label 3 in `Object.values`), the tumour is then picked as the `organ` badge.
-  - **Fix:** for envelope datasets, derive badges from the **canonical label integers** (2 = tumour, 3 = organ, 1 = body, 4 = bone) instead of name matching. Fall back to the name heuristic only when labels are absent. Then rerun `npm run data:index` and verify `hanseg_case_01_seg → hasTumor:true, organ:"organ envelope"`.
-  - **Refs:** `scripts/build_index.cjs:35-37`, `public/data/index.json:21,26`.
+- [x] **Picker badges misclassify the ML dataset. — FIXED 2026-07-09.** `public/data/index.json` recorded `hanseg_case_01_seg` as `"hasTumor": false` with `"organ": "brainstem (MedSAM2)"` — but that layer *is* the tumour.
+  - **Root cause:** `build_index.cjs` derived `hasTumor`/`organ` from a label-**name** regex (`/tumou?r|lesion|gtv|segmentation|ground.?truth/i`). The GT case only passed because its label was named `…(ground truth)`; the ML tumour named `brainstem (MedSAM2)` matched nothing. Compounded by JS numeric key ordering (label 2 sorts before label 3 in `Object.values`), the tumour was then picked as the `organ` badge. The deeper cause: `build_index` diverged from the `label === 2` = tumour invariant the rest of the system (`Viewer3D`, MIP) already relies on; the `segmentation|ground.?truth` keywords were a patch layered on that divergence.
+  - **Resolution:** badges now derive from the **canonical label integers** (2 = tumour, 3 = organ, 1 = body, 4 = bone), with name/`tumorMesh` only as a legacy fallback. Verified across all builder schemes (envelope, KiTS, NLST, single-tumour) with no regression; `index.json` regenerated → both datasets `hasTumor:true, organ:"organ envelope"`.
+  - **Refs:** `scripts/build_index.cjs:30-42`.
 
 ---
 
@@ -32,6 +32,11 @@ Companion tracking: this list is the actionable form of [design.md §8](design.m
 - [ ] **Unify the label-1 convention across builders.** Label 2 = tumour is universal, but label 1 = "body" in envelope datasets vs "kidney"/"lung"/organ in legacy builders.
   - **Fix:** migrate legacy builders to the envelope label scheme (1=body, 2=tumour, 3=organ, 4=bone) as they're consolidated; until then, all consumers must read `labels` and never assume label 1.
   - **Refs:** `schema.md §6`.
+
+- [ ] **Converge the three tumour/layer-detection paths onto `label === 2`.** Surfaced while root-causing the P1 badge bug: "is there a tumour / which layer is it" is currently decided three different ways — `Viewer3D.tsx:90`/`mpr.ts:145` (`label === 2`, canonical), `StatsPanel.tsx:11` (`metrics && tumorMesh`, legacy), and `build_index.cjs` (now label-int, fixed). `StatsPanel` is not an active bug (envelope datasets have no `metrics`, so it correctly falls through to the acquisition panel), but it's a divergent path that will mislead the next change.
+  - **Also latent:** `StatsPanel.tsx:47` `organName = labels["1"]` assumes label 1 = organ — false for envelope datasets (label 1 = body). Only reached when `hasOrgan` (NLST-only today), so dormant, but it's the same label-1 landmine.
+  - **Fix:** when `StatsPanel` is next touched, detect the tumour by `label === 2` (or a seg-derived signal) and read the organ name by canonical label 3, not `labels["1"]`.
+  - **Refs:** `src/components/StatsPanel.tsx:11,47`.
 
 ---
 

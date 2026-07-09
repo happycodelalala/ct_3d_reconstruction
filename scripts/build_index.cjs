@@ -29,12 +29,19 @@ function buildEntry(id) {
   }
   const labels = m.labels || {};
   const tps = Array.isArray(m.timepoints) ? m.timepoints : [];
-  // Derive badges from label NAMES, not positional keys — multi-label datasets put
-  // body/bone/organ/tumour on different numbers, so "label 1 == organ" was wrong.
-  const named = Object.values(labels);
-  const isTumour = (n) => /tumou?r|lesion|gtv|segmentation|ground.?truth/i.test(n);
-  const hasTumor = named.some(isTumour) || tps.some((tp) => tp.tumorMesh);
-  const organ = named.find((n) => !isTumour(n) && !/body|bone/i.test(n)) || null;
+  // Badges follow the CANONICAL label convention (1=body, 2=tumour, 3=organ, 4=bone) —
+  // the same `label === 2` invariant Viewer3D and the MIP render on. Keying off names
+  // was fragile: a tumour named "brainstem (MedSAM2)" matched no keyword, so the ML case
+  // was mislabelled (hasTumor:false, tumour picked as the organ). See docs/schema.md §6.
+  const isTumourName = (n) => /tumou?r|lesion|gtv/i.test(n);
+  const hasTumor = "2" in labels || tps.some((tp) => tp.tumorMesh);
+  // The organ badge is the region this study is about — never the tumour(2)/body/bone.
+  // Prefer the canonical organ label (3); else the first non-tumour, non-body/bone label
+  // (covers legacy datasets where label 1 is the organ, e.g. kidney/lung).
+  const organEntry =
+    Object.entries(labels).find(([k]) => k === "3") ||
+    Object.entries(labels).find(([k, n]) => k !== "2" && !/body|bone/i.test(n) && !isTumourName(n));
+  const organ = organEntry ? organEntry[1] : null;
   return {
     id: m.id || id,
     base: `/data/${id}`,
