@@ -1,6 +1,11 @@
 import { create } from "zustand";
 import { loadDataset as fetchDataset, loadIndex as fetchIndex, type DatasetEntry, type DisplayMode, type RealDataset } from "./lib/dataset";
 
+/** Normalized slice position (crosshair z) in [0,1]. Guards the single-slice case
+ *  (sliceMax = dims[2]-1 = 0) so it can't produce 0/0 = NaN. Shared by every view
+ *  that maps `slice` to a crosshair depth (Viewer3D MPR box, MPR strip tiles). */
+export const sliceFraction = (slice: number, sliceMax: number): number => slice / Math.max(1, sliceMax);
+
 interface AppState {
   datasets: DatasetEntry[];
   indexLoaded: boolean;

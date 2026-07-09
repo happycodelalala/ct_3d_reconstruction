@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { useStore } from "../store";
+import { useStore, sliceFraction } from "../store";
 import { renderReformat, renderMIP, realSampler, type PlaneKind } from "../lib/mpr";
 import { buildLabelStyle, type Manifest } from "../lib/dataset";
 
@@ -67,7 +67,7 @@ function ProjectionTile({ kind, label, data }: { kind: PlaneKind; label: string;
   const labelStyle = buildLabelStyle(data.manifest, labelVisible);
 
   const result = useMemo(() => {
-    const cross = { x: crossX, y: crossY, z: slice / Math.max(1, sliceMax) };
+    const cross = { x: crossX, y: crossY, z: sliceFraction(slice, sliceMax) };
     const { sampler, ext } = realSampler(data.ct, data.seg, data.manifest, window, level,
       { mri: data.mri, mode, fusion: fusionAlpha });
     return renderReformat(kind, sampler, ext, cross, { angleDeg: obliqueAngle, labelStyle, base: 224 });
@@ -82,7 +82,7 @@ function ProjectionTile({ kind, label, data }: { kind: PlaneKind; label: string;
   }, [result]);
 
   const depthPct =
-    kind === "coronal" ? crossY * 100 : kind === "sagittal" ? crossX * 100 : (slice / Math.max(1, sliceMax)) * 100;
+    kind === "coronal" ? crossY * 100 : kind === "sagittal" ? crossX * 100 : sliceFraction(slice, sliceMax) * 100;
 
   const onClick = (e: React.MouseEvent) => {
     const r = wrapRef.current!.getBoundingClientRect();
@@ -137,7 +137,7 @@ function MIPTile({ data }: { data: TPData }) {
   }, [result]);
 
   const cu = crossX;
-  const cv = 1 - slice / Math.max(1, sliceMax);
+  const cv = 1 - sliceFraction(slice, sliceMax);
   const onClick = (e: React.MouseEvent) => {
     const r = wrapRef.current!.getBoundingClientRect();
     const fx = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));

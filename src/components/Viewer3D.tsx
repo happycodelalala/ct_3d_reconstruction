@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
-import { useStore } from "../store";
+import { useStore, sliceFraction } from "../store";
 import { makeRealSliceTexture, imageToTexture } from "../lib/sliceTexture";
 import { buildLabelStyle, sliceWorldZ, type MeshData } from "../lib/dataset";
 import { renderReformat, realSampler, type PlaneBasis, type PlaneKind } from "../lib/mpr";
@@ -168,7 +168,7 @@ function MPRQuad({ kind, color, tp }: { kind: PlaneKind; color: string; tp: NonN
   const mode = tp.mri ? displayModality : "ct";
   const labelStyle = buildLabelStyle(tp.manifest, labelVisible);
   const { tex, geo, edges } = useDisposable(useMemo(() => {
-    const cross = { x: crossX, y: crossY, z: slice / sliceMax };
+    const cross = { x: crossX, y: crossY, z: sliceFraction(slice, sliceMax) };
     const { sampler, ext } = realSampler(tp.ct, tp.seg, tp.manifest, window, level, { mri: tp.mri, mode, fusion: fusionAlpha });
     const rf = renderReformat(kind, sampler, ext, cross, { angleDeg: obliqueAngle, labelStyle, base: 200, transparentAir: true });
     const geo = buildQuad(rf.basis);
