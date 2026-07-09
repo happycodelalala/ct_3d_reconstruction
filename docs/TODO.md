@@ -50,8 +50,10 @@ Companion tracking: this list is the actionable form of [design.md §8](design.m
 
 ## P3 — Improvements
 
-- [ ] **Add lightweight load-time manifest validation** in `src/lib/dataset.ts` (`loadDataset` currently blind-casts `as Manifest`). A minimal check on required fields (`dims`, `defaultWL`, `timepoints[].ct`) turns silent deep-`undefined` failures into a clear error.
-  - **Refs:** `src/lib/dataset.ts:180`.
+- [x] **Add lightweight load-time manifest validation. — DONE 2026-07-09.** `loadDataset` blind-cast `as Manifest`, so a malformed manifest failed later with a deep `undefined` access (e.g. `defaultWL.window`). Added `validateManifest` checking **every field the app dereferences unconditionally** — enumerated exhaustively from the code (grep), not from memory: `modality` (`.split`), `dims`, `worldExtent`, `spacingMm` (`.map`/`[i]`), `defaultWL`, non-empty `timepoints[]` each with a `ct`. (A self-review pass caught that a first cut had missed `spacingMm`/`modality`, which would have crashed StatsPanel/CTPanel — fixed before commit.)
+  - **Similar issue found & fixed (same class as the audit bug — an inconsistently-applied guard):** `loadDataset`'s manifest and metrics fetches skipped the `res.ok` check that `fetchGzBin`/`fetchMesh`/`loadIndex` all have, so an unavailable dataset (the documented "DATASET UNAVAILABLE" case) threw a cryptic JSON `SyntaxError` on the 404 body. Root cause: the fetch-then-check pattern was duplicated across four sites and `loadDataset` got neither guard. Deduplicated into a `fetchJson` helper (fetch + `res.ok`) now used by manifest/metrics/mesh; `fetchMesh` also guards `positions[]`/`indices[]`.
+  - **Verified:** `tsc` green; real gt/seg manifests accepted, malformed variants (missing dims / bad defaultWL / empty timepoints / tp without ct) rejected with `…/manifest.json: <reason> (see docs/schema.md)`.
+  - **Refs:** `src/lib/dataset.ts` (`fetchJson`, `validateManifest`, `loadDataset`).
 
 - [ ] **Reconcile the split windowing conventions** — `defaultWL`/`mriWL` (normalized 0..1, UI) vs `storageWindowHU` / per-builder HU windows (preprocess). Document the relationship clearly, or derive one from the other.
   - **Refs:** `schema.md §2.2, §4`.

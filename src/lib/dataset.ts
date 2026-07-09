@@ -170,15 +170,45 @@ async function fetchGzBin(url: string): Promise<Uint8Array> {
   return u8;
 }
 
-async function fetchMesh(url: string): Promise<MeshData> {
+// Fetch + parse JSON with the same HTTP guard the binary/index fetches use, so a
+// missing/unavailable asset fails with a clear "HTTP 404" instead of a cryptic JSON
+// SyntaxError on the 404 body. (loadIndex keeps its own bespoke message.)
+async function fetchJson(url: string): Promise<any> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-  const j = await res.json();
+  return res.json();
+}
+
+async function fetchMesh(url: string): Promise<MeshData> {
+  const j = await fetchJson(url);
+  if (!Array.isArray(j.positions) || !Array.isArray(j.indices))
+    throw new Error(`${url}: malformed mesh — need positions[] and indices[]`);
   return { positions: Float32Array.from(j.positions), indices: Uint32Array.from(j.indices) };
 }
 
+// Validate the fields the app dereferences unconditionally, so a malformed manifest
+// fails at load with an actionable message instead of a deep `undefined` access later
+// (there is no server-side schema check — see docs/schema.md §2).
+function validateManifest(m: any, base: string): Manifest {
+  const bad = (msg: string): never => {
+    throw new Error(`${base}/manifest.json: ${msg} (see docs/schema.md)`);
+  };
+  if (!m || typeof m !== "object") bad("not a JSON object");
+  if (typeof m.modality !== "string") bad("modality must be a string"); // StatsPanel/CTPanel call .split() on it
+  if (!Array.isArray(m.dims) || m.dims.length !== 3) bad("dims must be [X, Y, Z]");
+  if (!Array.isArray(m.worldExtent) || m.worldExtent.length !== 3) bad("worldExtent must be [x, y, z]");
+  if (!Array.isArray(m.spacingMm) || m.spacingMm.length !== 3) bad("spacingMm must be [x, y, z]"); // StatsPanel/CTPanel index + .map()
+  if (!m.defaultWL || typeof m.defaultWL.window !== "number" || typeof m.defaultWL.level !== "number")
+    bad("defaultWL must be { window, level }");
+  if (!Array.isArray(m.timepoints) || m.timepoints.length === 0) bad("timepoints[] must be a non-empty array");
+  m.timepoints.forEach((tp: any, i: number) => {
+    if (!tp || typeof tp.ct !== "string") bad(`timepoints[${i}].ct must be a volume filename`);
+  });
+  return m as Manifest;
+}
+
 export async function loadDataset(base: string): Promise<RealDataset> {
-  const manifest = (await fetch(`${base}/manifest.json`).then((r) => r.json())) as Manifest;
+  const manifest = validateManifest(await fetchJson(`${base}/manifest.json`), base);
 
   const timepoints = await Promise.all(
     manifest.timepoints.map(async (tp) => ({
@@ -198,7 +228,7 @@ export async function loadDataset(base: string): Promise<RealDataset> {
 
   const out: RealDataset = { manifest, timepoints };
   if (manifest.metrics) {
-    out.metrics = (await fetch(`${base}/${manifest.metrics}`).then((r) => r.json())) as RealMetrics;
+    out.metrics = (await fetchJson(`${base}/${manifest.metrics}`)) as RealMetrics;
   }
   return out;
 }

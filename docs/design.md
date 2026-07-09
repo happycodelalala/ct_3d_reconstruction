@@ -25,7 +25,7 @@ ONCOVOL turns paired **CT + MRI** studies into an interactive 3D reconstruction 
    └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**The asset boundary is the contract.** The pipeline emits static files; the frontend only ever reads them. Neither side shares code or types with the other — [schema.md](schema.md) is the only thing that keeps them in sync. There is no server and no runtime validation, so the schema being written down and honored *is* the integration test.
+**The asset boundary is the contract.** The pipeline emits static files; the frontend only ever reads them. Neither side shares code or types with the other — [schema.md](schema.md) is the only thing that keeps them in sync. There is no server, and only the load-bearing manifest fields are validated at load (`dataset.ts::validateManifest`), so the schema being written down and honored *is* the integration test.
 
 **Tech stack.** Frontend: Vite 5, React 18, Three.js 0.168 via @react-three/fiber + drei, zustand 4 for state, TypeScript strict. Pipeline: Python 3 + SimpleITK + scikit-image (imaging), Node for KiTS + the index builder. MedSAM2 (vendored) for promptable tumour segmentation; TotalSegmentator for organ masks.
 
@@ -140,7 +140,7 @@ This is the most load-bearing convention in the system and the reason [geometry.
 
 ## 7. Key design decisions
 
-- **File-based asset boundary, no server.** Simple, cacheable, statically hostable. Cost: no runtime validation — the schema doc is the contract, and a malformed manifest fails lazily in the browser. → [§8](#8-known-drift--alignment-worklist)
+- **File-based asset boundary, no server.** Simple, cacheable, statically hostable. Cost: no *server-side* validation — the schema doc is the contract; the loader guards the load-bearing manifest fields at fetch time (`dataset.ts::validateManifest`), but optional fields are still trusted. → [§8](#8-known-drift--alignment-worklist)
 - **Everything on one grid.** Trades native resolution (256² in-plane) for guaranteed cross-modality/mesh registration and light assets. Rendering the native 1024² envelope would need substantially more GPU/memory; 256³ is the deliberate default.
 - **Label color in the manifest, not the mesh.** Data-driven theming; one place to change a layer's look.
 - **LPS canonicalization at ingest.** Turns the frontend's axis-aligned assumption from "happens to hold" into "enforced," so future non-LPS data can't silently corrupt orientation.
@@ -158,7 +158,7 @@ These are the concrete deduplication/alignment targets this doc-pair is meant to
 4. **Two mesh-carrying mechanisms.** Legacy `tumorMesh`/`organMesh` (hard-mapped to labels 2/1) vs the current `timepoints[].meshes[]`. New builders should emit only `meshes[]`; the legacy slots stay for old datasets.
 5. **Two builder families duplicate primitives.** `preprocess_hn.py` / `preprocess_nlst*.py` / `preprocess.cjs` each re-implement grid/window/mesh/gzip instead of reusing `preprocess_hn_mri` helpers. Consolidate as they are touched.
 6. **Label-1 semantics vary.** Label 2 = tumour is universal; label 1 = "body" in envelope datasets but "kidney"/"lung"/organ in legacy builders. Documented canonically in [schema.md](schema.md#labels--colors) — don't assume label 1 without checking `labels`.
-7. **No runtime manifest validation.** Consider a lightweight load-time schema check in `dataset.ts` so malformed manifests fail with a clear message instead of a deep `undefined` access.
+7. ~~No runtime manifest validation.~~ **RESOLVED 2026-07-09.** `dataset.ts::validateManifest` now checks the unconditionally-dereferenced fields at load (via a shared `fetchJson` guard), so a malformed or unavailable manifest fails with an actionable message instead of a deep `undefined` access or a cryptic 404 `SyntaxError`. (Not a full schema validator — it covers the load-bearing fields, not every optional one.)
 8. **Windowing conventions are split** (`defaultWL`/`mriWL` normalized 0..1 for the UI vs `storageWindowHU`/per-builder HU windows at preprocess). Documented, not yet unified.
 9. ~~Picker badge derivation is fragile.~~ **RESOLVED 2026-07-09.** `build_index.cjs` derived `hasTumor`/`organ` from a label-_name_ regex, so the ML dataset's tumour (`brainstem (MedSAM2)`) was mislabelled (`hasTumor:false`, tumour picked as `organ`). Now derives from the canonical label integers (2 = tumour, 3 = organ), aligned with the frontend's `label === 2` invariant. Follow-up (open): converge `StatsPanel`'s separate tumour-detection path too — see [TODO.md](TODO.md).
 
