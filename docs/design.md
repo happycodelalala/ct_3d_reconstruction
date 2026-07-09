@@ -27,7 +27,7 @@ ONCOVOL turns paired **CT + MRI** studies into an interactive 3D reconstruction 
 
 **The asset boundary is the contract.** The pipeline emits static files; the frontend only ever reads them. Neither side shares code or types with the other — [schema.md](schema.md) is the only thing that keeps them in sync. There is no server, and only the load-bearing manifest fields are validated at load (`dataset.ts::validateManifest`), so the schema being written down and honored *is* the integration test.
 
-**Tech stack.** Frontend: Vite 5, React 18, Three.js 0.168 via @react-three/fiber + drei, zustand 4 for state, TypeScript strict. Pipeline: Python 3 + SimpleITK + scikit-image (imaging), Node for KiTS + the index builder. MedSAM2 (vendored) for promptable tumour segmentation; TotalSegmentator for organ masks.
+**Tech stack.** Frontend: Vite 5, React 18, Three.js 0.168 via @react-three/fiber + drei, zustand 4 for state, TypeScript strict. Pipeline: Python 3 + SimpleITK + scikit-image (imaging), Node for the index builder. MedSAM2 (vendored) for promptable tumour segmentation; TotalSegmentator for organ masks.
 
 ---
 
@@ -57,7 +57,7 @@ ONCOVOL turns paired **CT + MRI** studies into an interactive 3D reconstruction 
 | `triage_pipeline.py` | Recall-safe tumour-envelope triage (ensemble → consensus → dilate → prune → route). | `recall_safe_envelopes`, `recall_precision` |
 | `calibration_experiment.py` | The (failed, documented) uncertainty-calibration experiment behind the triage pivot. | (CLI) |
 | `build_index.cjs` | Scans manifests → `public/data/index.json` (the picker registry). | (CLI, `npm run data:index`) |
-| `preprocess.cjs`, `preprocess_hn.py`, `preprocess_nlst*.py` | Legacy per-dataset builders (KiTS, single-slice H&N, NLST). Self-contained. | (CLI) |
+| `preprocess_hn.py` | Legacy CT-only single-slice H&N builder (DICOM + RTSTRUCT). Self-contained. | (CLI) |
 | `e2e.mjs`, `e2e_setup.sh` | Headless Puppeteer smoke test of the real app. | (CLI, `npm run e2e`) |
 
 ### 3.2 Shared-helper graph (the dedup structure)
@@ -77,8 +77,7 @@ medsam2_seed_test.py ──(prepare_case, segment, dice) ─────┘
      ▲                        ▲
 triage_pipeline.py            calibration_experiment.py
 
-Standalone (own copies of grid/window/mesh/gzip): preprocess_hn.py,
-preprocess_nlst.py, preprocess_nlst_tumor.py, preprocess.cjs.
+Standalone (own copy of grid/window/mesh/gzip): preprocess_hn.py.
 ```
 
 **Rule of thumb for new imaging code:** enter through `load_ct_mr` (gets you canonicalization + cached registration for free) and build on `preprocess_hn_mri`'s `prepare_output_volumes` / `mesh_from_mask`. Do not re-implement the grid, windowing, meshing, or gzip — that is exactly the duplication this doc exists to prevent.
@@ -156,7 +155,7 @@ These are the concrete deduplication/alignment targets this doc-pair is meant to
 2. **README manifest example is missing fields** now emitted: `storageWindowHU`, `mriWL`, `labelColors`, `timepoints[].mri`, `timepoints[].meshes[]`.
 3. **Vestigial manifest field.** Top-level `meshes` is always `null` (the live mesh list is `timepoints[].meshes`); kept as a harmless vestige rather than churning six builders. `storageWindowHU` is emitted-but-unrendered provenance, now acknowledged in the TS `Manifest` type (drift resolved). Manifest `hasSegmentation` *is* read — `App.tsx`/`ControlRail.tsx` gate the segmentation UI on it — so it stays.
 4. **Two mesh-carrying mechanisms.** Legacy `tumorMesh`/`organMesh` (hard-mapped to labels 2/1) vs the current `timepoints[].meshes[]`. New builders should emit only `meshes[]`; the legacy slots stay for old datasets.
-5. **Two builder families duplicate primitives.** `preprocess_hn.py` / `preprocess_nlst*.py` / `preprocess.cjs` each re-implement grid/window/mesh/gzip instead of reusing `preprocess_hn_mri` helpers. Consolidate as they are touched.
+5. **One legacy builder still duplicates primitives.** The KiTS/NLST builders were removed (2026-07-09, no longer needed); only `preprocess_hn.py` (CT-only single-slice H&N) still re-implements grid/window/mesh/gzip instead of reusing `preprocess_hn_mri` helpers. Consolidate or retire when next touched.
 6. **Label-1 semantics vary.** Label 2 = tumour is universal; label 1 = "body" in envelope datasets but "kidney"/"lung"/organ in legacy builders. Documented canonically in [schema.md](schema.md#labels--colors) — don't assume label 1 without checking `labels`.
 7. ~~No runtime manifest validation.~~ **RESOLVED 2026-07-09.** `dataset.ts::validateManifest` now checks the unconditionally-dereferenced fields at load (via a shared `fetchJson` guard), so a malformed or unavailable manifest fails with an actionable message instead of a deep `undefined` access or a cryptic 404 `SyntaxError`. (Not a full schema validator — it covers the load-bearing fields, not every optional one.)
 8. **Windowing conventions are split** (`defaultWL`/`mriWL` normalized 0..1 for the UI vs `storageWindowHU`/per-builder HU windows at preprocess). Documented, not yet unified.

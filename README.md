@@ -3,41 +3,39 @@
 A browser workstation that shows a **3D reconstruction** of a tumour next to the
 **original axial CT slices** (the natural projection), a full **multi-planar
 reformat (MPR)** set, and a **longitudinal timeline** — all driven by **real public
-CT data**. Multi-layer (scroll the slices), multi-angle (orbit the volume), and
-multi-timepoint (scrub the screening years) in one view.
+CT + MRI data**. Multi-layer (scroll the slices), multi-angle (orbit the volume), and
+multi-modality (CT / MR / fusion) in one view.
 
 It is a clinical "imaging-workstation" UI: dark theme, phosphor-cyan for active
 data, amber for lesions, teal for organs, with synced crosshairs across every view.
 
-> **No learned model / inference.** Every reconstruction is built from a real
-> segmentation mask (expert labels, public dataset annotations, or — for lung
-> envelopes — a transparent CT threshold). The 3D meshes are marching-cubes
-> isosurfaces of those masks; the metrics are measured from the labelled voxels.
+> **How the layers are made.** Body and bone are transparent CT thresholds; organs are
+> expert annotations (ground-truth case) or **TotalSegmentator**; the tumour layer is an
+> expert mask or **MedSAM2** promptable segmentation. Only the tumour uses a learned model
+> — see [docs/design.md §5](docs/design.md). The 3D meshes are marching-cubes isosurfaces
+> of those masks.
 
 ---
 
 ## Datasets
 
-Three real cases ship in, switchable in the top bar. Each is described by a unified
-`manifest.json`, so the same UI renders all of them.
+Two real **HaN-Seg** head & neck cases (paired **CT + T1 MRI**) ship in, switchable in
+the top bar. Each is described by a unified `manifest.json`, so the same UI renders both.
+Both carry a **full envelope** — body, bone, organ, and a tumour layer — as
+independently-toggleable 2D overlays and 3D shells.
 
-| Switcher | Patient | Organ | Tumour | Timepoints | Source |
+| Switcher | Case | Envelope (body · bone · organ) | Tumour layer | Modality | Source |
 |---|---|---|---|---|---|
-| **KiTS19 · KIDNEY** | case_00000 | kidney envelope | ✅ expert mask | 1 | KiTS19 (HuggingFace + GitHub) |
-| **NLST · LUNG (×3)** | 104221 | lung envelope | — | **3** (1999/2000/2001) | NLST via IDC + TotalSegmentator |
-| **NLST · TUMOUR (×2)** | 100012 | lung envelope | ✅ expert mask (2000 screen) | **2** (1999/2000) | NLST via IDC + NLSTseg |
+| **case_01 · GROUND TRUTH** | case_01 | expert OAR annotations | brainstem · expert | CT + T1 MR | HaN-Seg (Zenodo 7442914) |
+| **case_01 · ML SEGMENTATION** | case_01 | organs from TotalSegmentator | brainstem · MedSAM2 | CT + T1 MR | HaN-Seg (Zenodo 7442914) |
 
-- **KiTS19 · case_00000** — contrast kidney CT with expert kidney/tumour
-  segmentation. Tumour 7.8 cm³; the headline "3D reconstruction of cancer" case.
-- **NLST · 104221** — low-dose lung screening CT across three annual screens (real
-  longitudinal series). NLST ships no tumour masks, so the lung envelope comes from
-  IDC's TotalSegmentator organ segmentations, with a per-timepoint lung-volume
-  readout (4935 → 4894 → 3731 cm³).
-- **NLST · 100012** — the **all-in-one** case: organ envelope **+** tumour **+**
-  time series. Lung envelope at both screens; the expert NLSTseg tumour mask
-  (adenocarcinoma, Stage IA, 5.8 cm³) is present at the 2000 diagnostic screen.
-  NLSTseg only annotates the diagnostic screen, so the 1999 screen shows lung + CT
-  (realistic for a screen-detected cancer).
+- **case_01 · ground truth** — expert OAR annotations; the brainstem stands in as the
+  tumour layer (HaN-Seg ships no lesion) to exercise the whole CT+MR → envelope → 3D path
+  on real data. The brainstem is **not the target — tumour segmentation is**; point the
+  builder at a real GTV mask when patient data is available and nothing downstream changes.
+- **case_01 · ML segmentation** — the same case built entirely from models: organs from
+  **TotalSegmentator**, the tumour layer from **MedSAM2**. Load it beside the ground-truth
+  case for a model-vs-expert comparison. See §2 below and [docs/design.md](docs/design.md).
 
 ---
 
@@ -54,8 +52,8 @@ preprocessed assets in `public/data/<id>/` are **gitignored** — regenerate the
 with the pipelines below (or the app shows a "LOADING / DATASET UNAVAILABLE" state).
 
 **Stack:** Vite + React + TypeScript · Three.js via `@react-three/fiber` + `drei` ·
-`zustand` for shared state. Requires Node ≥ 18 (developed on 25). The data pipelines
-use Node (KiTS) and Python via **uv** (NLST).
+`zustand` for shared state. Requires Node ≥ 18 (developed on 25). The data pipeline
+uses Node (the dataset index builder) and Python via **uv** (SimpleITK + MedSAM2).
 
 ---
 
@@ -77,8 +75,8 @@ use Node (KiTS) and Python via **uv** (NLST).
   reslices of the *same* volume plus a **MIP** (maximum-intensity projection) — all
   crosshair-linked with an adjustable oblique angle, then **lesion quantification**
   (or acquisition info for non-segmented timepoints).
-- **Bottom — the timeline.** For longitudinal datasets, scrub or ▶ play through the
-  screening years; the whole workstation updates to that timepoint.
+- **Bottom — the timeline.** For datasets with multiple timepoints, scrub or ▶ play
+  through them; the whole workstation updates to the selected timepoint.
 
 The axial, coronal, sagittal and oblique views are all **resliced from one 3D
 volume** — exactly how a radiology workstation derives them, no extra data needed.
@@ -89,10 +87,10 @@ they stay perfectly consistent.
 
 ## How it works
 
-A preprocessing step turns a CT volume (+ optional segmentation) into compact,
+A preprocessing step turns a CT (+ registered MR + segmentation) into compact,
 browser-ready assets that all live in **one normalized coordinate space**, so the
-2D slices and the 3D meshes line up. (Verified: KiTS seg ↔ mesh tumour centroids
-agree to < 0.1 voxel; NLSTseg < 0.5 voxel.)
+2D slices and the 3D meshes line up. All inputs are canonicalized to LPS at ingest
+and share one grid — the coordinate contract is [docs/design.md §6](docs/design.md).
 
 Per dataset, the pipeline emits:
 
@@ -148,76 +146,10 @@ writes `public/data/<id>/`. Python pipelines use a `uv` environment:
 
 ```bash
 uv venv .venv
-uv pip install --python .venv idc-index pydicom nibabel numpy scipy scikit-image remotezip openpyxl rt-utils
+uv pip install --python .venv pydicom rt-utils numpy scipy scikit-image SimpleITK
 ```
 
-### 1. KiTS19 — kidney + tumour (NIfTI, Node)
-
-```bash
-mkdir -p rawdata
-curl -L "https://huggingface.co/datasets/neheller/KiTS-Challenge-Imaging/resolve/main/images/case_00000.nii.gz" -o rawdata/case_00000_img.nii.gz
-curl -L "https://raw.githubusercontent.com/neheller/kits19/master/data/case_00000/segmentation.nii.gz" -o rawdata/case_00000_seg.nii.gz
-npm run data:kits          # scripts/preprocess.cjs -> public/data/kits_case00000/
-```
-
-`preprocess.cjs` parses the NIfTI (nifti-reader-js), windows + downsamples the CT,
-and runs marching cubes (`isosurface`) on the kidney/tumour masks.
-
-### 2. NLST · 104221 — longitudinal lungs (DICOM, Python)
-
-NLST imaging is openly downloadable from **NCI Imaging Data Commons** (no account).
-Download the 3 screening CTs + their TotalSegmentator SEGs with `idc-index`, then:
-
-```bash
-.venv/bin/python - <<'PY'
-from idc_index import IDCClient
-c = IDCClient(); df = c.index
-ct  = df[(df.PatientID=="104221") & (df.Modality=="CT")  & (df.instanceCount>50)]
-seg = df[(df.PatientID=="104221") & (df.Modality=="SEG")]
-c.download_from_selection(seriesInstanceUID=ct.SeriesInstanceUID.tolist(),  downloadDir="nlst_data",
-                          dirTemplate="%PatientID/%StudyInstanceUID/%SeriesInstanceUID")
-ct[["StudyDate","StudyInstanceUID","SeriesInstanceUID","SeriesDescription"]].to_csv("nlst_data/_manifest.csv", index=False)
-c.download_from_selection(seriesInstanceUID=seg.SeriesInstanceUID.tolist(), downloadDir="nlst_seg",
-                          dirTemplate="%SeriesInstanceUID")
-PY
-.venv/bin/python scripts/preprocess_nlst.py    # -> public/data/nlst_104221/
-```
-
-`preprocess_nlst.py` windows + resamples each CT, reads the matching TotalSegmentator
-DICOM SEG (matched via its referenced CT series), extracts the lung lobes, and writes
-a per-timepoint lung label volume + marching-cubes lung mesh (scikit-image).
-
-### 3. NLST · 100012 — lungs + tumour + time (NIfTI + DICOM, Python)
-
-The expert tumour mask comes from **NLSTseg** (Zenodo `10.5281/zenodo.14838349`,
-34 GB of zips) — but a single patient's CT + tumour NIfTI can be pulled over HTTP
-with `remotezip` (no full-zip download). The 1999 screen's CT comes from IDC.
-
-```bash
-# tumour CT + mask (2000 screen) from NLSTseg, just this patient's two files
-.venv/bin/python - <<'PY'
-from remotezip import RemoteZip
-import os; os.makedirs("nlstseg_data", exist_ok=True)
-url = "https://zenodo.org/records/14838349/files/2_LungTumor.zip?download=1"
-with RemoteZip(url) as z:
-    for k in ("CT","tumor"):
-        z.extract(f"NLSTseg_2_LungTumor/100012/100012_{k}.nii.gz", path="nlstseg_data")
-PY
-# prior screen (1999) CT from IDC
-.venv/bin/python - <<'PY'
-from idc_index import IDCClient
-IDCClient().download_from_selection(
-    seriesInstanceUID=["1.2.840.113654.2.55.335938848402215862539398120263494500079"],
-    downloadDir="nlst_tp", dirTemplate="%SeriesInstanceUID")
-PY
-.venv/bin/python scripts/preprocess_nlst_tumor.py   # -> public/data/nlst_100012/
-```
-
-`preprocess_nlst_tumor.py` builds both timepoints into the shared grid (orientation
-between the NLSTseg-NIfTI and IDC-DICOM screens is verified consistent), threshold-
-segments the lung envelope on each, and meshes the expert tumour at the 2000 screen.
-
-### 4. Head & neck — 3D tumour from a single annotated slice (DICOM + RTSTRUCT)
+### 1. Head & neck — 3D tumour from a single annotated slice (DICOM + RTSTRUCT)
 
 For a clinical RT export (a CT DICOM series + a DICOM **RTSTRUCT** whose tumour ROI
 is contoured on just **one** axial slice), `preprocess_hn.py` rasterizes the contour
@@ -249,7 +181,7 @@ Two propagation modes:
 > script's propagation step is deliberately isolated so a learned mask can drop into
 > the same meshing/manifest path later.
 
-### 5. HaN-Seg — CT + MRI fusion (NRRD, Python / SimpleITK)
+### 2. HaN-Seg — CT + MRI fusion (NRRD, Python / SimpleITK)
 
 Paired head & neck **CT + T1 MR** (+ organ-at-risk masks), openly downloadable from
 Zenodo (no account). This exercises the **CT+MRI** path: register the MR onto the CT,
@@ -369,7 +301,7 @@ scripts/              data pipeline — module map & dedup graph in docs/design.
   triage_pipeline.py        recall-safe tumour-envelope triage (ensemble -> consensus -> route)
   geometry.py               orientation guardrails: LPS canonicalization + axis-aligned/overlap checks
   build_index.cjs           scan manifests -> public/data/index.json (the picker registry)
-  preprocess.cjs, preprocess_nlst*.py, preprocess_hn.py   legacy per-dataset builders (KiTS, NLST, single-slice H&N)
+  preprocess_hn.py          legacy CT-only single-slice H&N builder (DICOM + RTSTRUCT)
 ```
 
 To add a dataset: write a preprocessing script that emits the unified `manifest.json`
@@ -381,28 +313,26 @@ Contracts: **[docs/schema.md](docs/schema.md)**.
 
 ## Caveats & honest notes
 
-- **Not a model.** There is no inference in the loop. Tumour masks are ground-truth
-  (KiTS, NLSTseg). Lung envelopes are either TotalSegmentator (104221) or a CT
-  threshold (100012, clearly an algorithmic envelope — its volume reads a little high
-  because the threshold also catches the trachea).
-- **No longitudinal tumour ground truth exists publicly** for NLST — NLSTseg
-  annotates only the one diagnostic screen per patient, so the 100012 tumour mesh is
-  present at the 2000 screen and absent at 1999.
-- **Low-dose ≠ crisp reformats.** NLST is ~2.5 mm slices (vs KiTS 0.5 mm), so its
-  coronal/sagittal/oblique reslices look coarser along the body axis — expected.
-- **GPU:** rendering is WebGL (any GPU). If a learned segmentation model is added
-  later, target **ROCm** rather than CUDA on AMD hardware.
+- **The tumour layer is a stand-in.** HaN-Seg ships no lesion, so the brainstem OAR plays
+  the tumour to exercise the pipeline end-to-end. It is not the target — point the builder
+  at a real GTV mask when patient data is available and nothing downstream changes.
+- **Ground truth vs model.** The two cases differ only in provenance: expert OAR
+  annotations vs TotalSegmentator organs + MedSAM2 tumour. Body and bone are CT thresholds
+  in both. Only the tumour layer uses a learned model.
+- **Downsampled grid.** Volumes are resampled to 256² in-plane (from 1024²) for light,
+  cross-modality-registered assets; native-resolution rendering would need far more GPU/RAM.
+- **GPU:** browser rendering is WebGL (any GPU); the Python ML tools (MedSAM2,
+  TotalSegmentator) run on a CUDA/ROCm workstation, not in the browser.
 
 ## Data sources & licenses
 
-- **KiTS19** — Heller et al., *The KiTS19 Challenge Data*. Imaging via the
-  `neheller/KiTS-Challenge-Imaging` HuggingFace dataset; segmentation via
-  `github.com/neheller/kits19`. CC BY-NC-SA.
-- **NLST** — National Lung Screening Trial, imaging via **NCI Imaging Data Commons**
-  (`portal.imaging.datacommons.cancer.gov`), DICOM, CC-BY. TotalSegmentator organ
-  segmentations are IDC analysis results.
-- **NLSTseg** — pixel-level lung-cancer masks on NLST LDCT (Zenodo
-  `10.5281/zenodo.14838349`, *Scientific Data* 2025), CC-BY 4.0.
+- **HaN-Seg** — Podobnik et al., head & neck **CT + T1 MR + OAR masks** (Zenodo
+  `7442914`). **CC-BY-NC-ND** — raw and derived assets are kept local (gitignored); do not
+  redistribute processed assets.
+- **TotalSegmentator** — nnU-Net organ segmentation; its head & neck tasks are Apache-2.0
+  (commercial-friendly). Used for the ML case's organ layer.
+- **MedSAM2** — promptable medical image segmentation (vendored under `MedSAM2/`, cloned
+  not committed). Used for the ML case's tumour layer.
 
-Raw downloads and derived assets (`rawdata/`, `nlst_data/`, `nlst_seg/`,
-`nlstseg_data/`, `nlst_tp/`, `public/data/`, `.venv/`) are gitignored.
+Raw downloads and derived assets (`hanseg_data/`, `public/data/`, `runs/`, `.venv/`,
+`MedSAM2/`, `checkpoints/`) are gitignored.

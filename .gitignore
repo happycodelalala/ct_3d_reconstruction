@@ -24,12 +24,7 @@ __pycache__/
 
 # ── Medical imaging data: raw downloads & derived assets ───────
 # NOTE: CT data is large and (even when de-identified) is kept out of git.
-rawdata/
-nlst_data/
-nlst_seg/
-nlstseg_data/
-nlst_tp/
-nlst_aimi/
+# (stray imaging files are also caught by the extension safety-net below.)
 hanseg_data/
 public/data/
 # derived experiment outputs (masks/QA from CC-BY-NC-ND data — keep local)
@@ -77,3 +72,6 @@ Thumbs.db
 
 # e2e test artifacts
 e2e_shots/
+
+# TotalSegmentator tool venv (separate, to not disturb the cu128 torch)
+.venv-totalseg/

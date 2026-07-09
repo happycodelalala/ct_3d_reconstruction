@@ -1,4 +1,4 @@
-// Loads preprocessed datasets (KiTS, NLST, …) and renders real axial slices.
+// Loads preprocessed datasets (HaN-Seg CT+MRI envelopes) and renders real axial slices.
 // A dataset has one or more timepoints (longitudinal) and optional segmentation.
 // 2D slices and 3D meshes share the SAME normalized world space (see scripts/).
 
@@ -26,7 +26,6 @@ export interface Manifest {
     tumorMesh?: string; // legacy single-mesh slots (label 2 / label 1); still honoured
     organMesh?: string;
     meshes?: { label: number; file: string }[]; // one isosurface per seg label
-    lungVolumeCm3?: number;
   }[];
   meshes: null;
   metrics: string | null;
@@ -56,7 +55,6 @@ export interface Timepoint {
   tumorMesh?: MeshData;
   organMesh?: MeshData;
   meshes?: { label: number; mesh: MeshData }[]; // one isosurface per seg label
-  lungVolumeCm3?: number;
 }
 
 // Per-label overlay colours: fallback palette (RGB 0..255) indexed by (label-1). Label 2 =
@@ -214,7 +212,6 @@ export async function loadDataset(base: string): Promise<RealDataset> {
     manifest.timepoints.map(async (tp) => ({
       id: tp.id,
       label: tp.label,
-      lungVolumeCm3: tp.lungVolumeCm3,
       ct: await fetchGzBin(`${base}/${tp.ct}`),
       mri: tp.mri ? await fetchGzBin(`${base}/${tp.mri}`) : undefined,
       seg: tp.seg ? await fetchGzBin(`${base}/${tp.seg}`) : undefined,

@@ -93,10 +93,10 @@ try {
   await page.screenshot({ path: path.join(SHOTS, "02_open.png") });
 
   console.log("\n3) search filters the list");
-  await page.type(".picker-search", "lung");
-  await page.waitForFunction(() => document.querySelectorAll(".picker-row").length === 2, { timeout: 5000 })
-    .then(() => ok(true, '"lung" → 2 rows'))
-    .catch(async () => ok(false, `"lung" expected 2, got ${await page.$$eval(".picker-row", (e) => e.length)}`));
+  await page.type(".picker-search", "segmentation");
+  await page.waitForFunction(() => document.querySelectorAll(".picker-row").length === 1, { timeout: 5000 })
+    .then(() => ok(true, '"segmentation" → 1 row'))
+    .catch(async () => ok(false, `"segmentation" expected 1, got ${await page.$$eval(".picker-row", (e) => e.length)}`));
 
   console.log("\n4) selecting a patient lazy-loads it");
   const before = await txt(page, ".picker-label");
@@ -106,7 +106,7 @@ try {
     return el && el.textContent.trim() !== prev && !/LOADING/.test(el.textContent);
   }, { timeout: 20000 }, before);
   const after = await txt(page, ".picker-label");
-  ok(after !== before && /NLST/.test(after), `switched: "${before}" → "${after}"`);
+  ok(after !== before && /segmentation/i.test(after), `switched: "${before}" → "${after}"`);
   ok((await page.$(".picker-pop")) === null, "popup closes after selection");
   await page.screenshot({ path: path.join(SHOTS, "03_switched.png") });
 

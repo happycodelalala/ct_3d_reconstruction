@@ -68,7 +68,6 @@ The manifest holds **filenames** (strings); the decoded runtime `Timepoint` (`da
 | `meshes` | `{label:number, file:string}[]` optional? | **Preferred.** One isosurface file per seg label. |
 | `tumorMesh` | string optional? | **Legacy.** Single mesh, hard-mapped to **label 2** by the viewer. |
 | `organMesh` | string optional? | **Legacy.** Single mesh, hard-mapped to **label 1**. |
-| `lungVolumeCm3` | number optional? | Legacy metric surfaced in StatsPanel. |
 
 ### 2.2 Sub-objects
 
@@ -150,7 +149,7 @@ Built by `scripts/build_index.cjs` (`npm run data:index`) by scanning every `man
 |---|---|
 | Payload | Raw voxel bytes, no header. |
 | dtype | **uint8** (0..255). |
-| Compression | gzip. Python builders use **level 6** (`gzip.compress(bytes, 6)`); `preprocess.cjs` uses zlib default. |
+| Compression | gzip. Python builders use **level 6** (`gzip.compress(bytes, 6)`). |
 | Element count | `X · Y · Z` = `dims[0]·dims[1]·dims[2]`. |
 | Ravel order | numpy C-order from `(Z,Y,X)` → **X fastest**. |
 | **Index formula** | **`idx = x + X·(y + Y·z)`** where `X=dims[0]`, `Y=dims[1]`. |
@@ -190,7 +189,7 @@ No color and no normals are stored — **normals are computed client-side** (`co
 | 4 | bone | `[222,216,198]` bone-white | green `[120,200,120]` |
 
 - **Label 2 = tumour is universal** across every builder.
-- **Label 1 is context-dependent:** "body" in envelope datasets, but "kidney"/"lung"/organ in legacy builders (`preprocess.cjs`, `preprocess_nlst*`). **Always read `labels` — never assume label 1.**
+- **Label 1 = body** in envelope datasets (the current convention). The only other builder, `preprocess_hn.py`, is single-tumour (label 2 only). Still: **read `labels`, don't hard-code — the label→name map is authoritative.**
 - Color resolution (`labelColor`, `dataset.ts:78`): `manifest.labelColors[String(label)] ?? LABEL_PALETTE[(label-1) % LABEL_PALETTE.length]` (palette length is currently 5). `LABEL_PALETTE` (`dataset.ts:63-69`): `[40,130,148]`, `[255,176,84]`, `[170,120,210]`, `[120,200,120]`, `[230,120,150]`.
 - Rendering: label 2 → solid glowing material; all other labels → translucent shells (`Viewer3D.tsx:86-105`). Seg overlay tint strength `SEG_TINT = 0.55`.
 
@@ -247,7 +246,7 @@ Dataset builders and their outputs. Full arg detail in each script's `--help`; c
 | `geometry.py` | `--case-dir` | — | (audit CLI; prints orientation + alignment, non-zero exit on misalignment) |
 | `build_index.cjs` | scans `public/data/*/manifest.json` | — | `public/data/index.json` |
 
-**Legacy / other builders:** `preprocess.cjs` (KiTS → `kits_case00000/`, labels 1=kidney/2=tumour), `preprocess_hn.py` (DICOM+RTSTRUCT single-slice → `hn_<PID>/`), `preprocess_nlst.py` (hard-coded PID 104221, per-timepoint `ct_t*/seg_t*`), `preprocess_nlst_tumor.py` (hard-coded PID 100012, 2 timepoints). These re-implement the grid/window/mesh primitives independently — a dedup target ([design.md §8](design.md#8-known-drift--alignment-worklist)).
+**Legacy builder:** `preprocess_hn.py` (DICOM + RTSTRUCT single-slice → `hn_<PID>/`, tumour = label 2, emits `tumorMesh`). It re-implements the grid/window/mesh primitives independently — a dedup target ([design.md §8](design.md#8-known-drift--alignment-worklist)). The KiTS/NLST builders were removed 2026-07-09 (data no longer needed).
 
 **seg volume `metrics.json` note:** `bboxMm` is ordered `[dx, dy, dz]` while arrays are `(z,y,x)` — the builder reorders explicitly (`preprocess_hn_mri.py:127`).
 

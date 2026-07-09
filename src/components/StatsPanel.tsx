@@ -41,23 +41,16 @@ export default function StatsPanel() {
     );
   }
 
-  // no tumour metrics -> acquisition info (+ organ volume when segmented, e.g. NLST lungs)
+  // no tumour metrics -> acquisition info (envelope datasets ship no metrics.json)
   const tp = real.timepoints[timepoint];
-  const hasOrgan = real.timepoints.some((t) => t.lungVolumeCm3 != null);
-  const organName = (m.labels?.["1"] ?? "ORGAN").toUpperCase();
   return (
     <section className="stats">
       <header className="panel-head">
-        <span className="panel-kicker">{hasOrgan ? `${organName} · ACQUISITION` : "ACQUISITION"}</span>
+        <span className="panel-kicker">ACQUISITION</span>
         <span className="status-pill">{real.timepoints.length > 1 ? "LONGITUDINAL" : "REAL"}</span>
       </header>
       <div className="metric-grid">
-        {hasOrgan ? (
-          <Metric label={`${organName} VOL`} value={`${tp.lungVolumeCm3 ?? "—"}`} unit="cm³" />
-        ) : (
-          <Metric label="IN-PLANE" value={`${m.dims[0]}`} unit="px" />
-        )}
-        <Metric label="SCREEN" value={`${timepoint + 1}`} unit={`/ ${real.timepoints.length}`} />
+        <Metric label="IN-PLANE" value={`${m.dims[0]}`} unit="px" />
         <Metric label="MODALITY" value={m.modality.split("·").pop()!.trim()} unit="" />
         <Metric label="SLICES" value={`${m.dims[2]}`} unit="" />
         <Metric label="Z STEP" value={m.spacingMm[2].toFixed(1)} unit="mm" />
@@ -66,10 +59,8 @@ export default function StatsPanel() {
       <div className="trend">
         <div className="trend-head"><span>SERIES</span><span className="mono dim">{tp.label}</span></div>
         <p className="ct-hint" style={{ margin: "8px 0 0" }}>
-          {hasOrgan
-            ? `${organName.toLowerCase()} envelope from TotalSegmentator (DICOM SEG via IDC) — lung volume per screen: ${real.timepoints.map((t) => t.lungVolumeCm3).join(" / ")} cm³. No tumour masks ship with NLST.`
-            : `${m.title} — ${real.timepoints.length} screening CTs. No masks ship with this collection.`}
-          {" "}Use the timeline to scrub between screening years.
+          {m.clinicalNote ? `${m.clinicalNote}. ` : `${m.title}. `}
+          Toggle the envelope layers and window / level from the left rail.
         </p>
       </div>
     </section>

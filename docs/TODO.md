@@ -17,9 +17,9 @@ Companion tracking: this list is the actionable form of [design.md §8](design.m
 
 ## P2 — Deduplication & alignment
 
-- [ ] **Consolidate the two builder families.** `preprocess_hn.py`, `preprocess_nlst.py`, `preprocess_nlst_tumor.py`, and `preprocess.cjs` each re-implement the output grid, windowing, meshing, and gzip that `preprocess_hn_mri` already exports (`output_grid`, `window_ct_u8`, `mesh_from_mask`, the gzip-6 write).
-  - **Fix:** migrate the Python legacy builders onto the shared helpers as they're next touched; leave `preprocess.cjs` (KiTS, Node) unless it's being reworked. Target: one canonical grid/window/mesh implementation.
-  - **Refs:** [design.md §3.2–3.3](design.md#3-the-python-pipeline).
+- [x] **Consolidate the two builder families. — RESOLVED by removal 2026-07-09.** With KiTS/NLST no longer needed, the root-cause fix for the legacy-builder duplication was **deletion, not consolidation**: removed `preprocess.cjs`, `preprocess_nlst.py`, `preprocess_nlst_tumor.py` (+ the `data:kits` npm script) and their README/docs references, and the dead `lungVolumeCm3` frontend plumbing they fed (types, loader, StatsPanel). Verified: no `src` refs remain, `tsc` green. Only `preprocess_hn.py` (CT-only single-slice H&N) still duplicates the primitives — tracked below.
+  - **Remaining:** `preprocess_hn.py` re-implements `output_grid`/`window`/`mesh_from_mask`/gzip. Migrate onto `preprocess_hn_mri` helpers, or retire it, when next touched. Needs a DICOM+RTSTRUCT case to verify.
+  - **Refs:** [design.md §8.5](design.md#8-known-drift--alignment-worklist).
 
 - [ ] **Standardize on `timepoints[].meshes[]`; retire the legacy mesh slots for new datasets.** Two mesh-carrying mechanisms coexist: legacy `tumorMesh`/`organMesh` (hard-mapped to labels 2/1 in `Viewer3D`) vs the current per-label `meshes[]`.
   - **Fix:** new builders emit only `meshes[]` + `labelColors` (the envelope path). Keep the legacy slots readable for old datasets, but don't produce them. `preprocess_hn_mri` still emits `tumorMesh` — move it to `meshes[]` when convenient.
@@ -27,14 +27,13 @@ Companion tracking: this list is the actionable form of [design.md §8](design.m
 
 - [x] **Decide fate of dead manifest fields. — DONE 2026-07-09.** `storageWindowHU` (emitted by every builder, was absent from the TS type) is genuine provenance → **added to the `Manifest` type** as optional metadata (`src/lib/dataset.ts`), resolving the type/data drift. Top-level `meshes` (always `null`) is a harmless vestige of the pre-per-timepoint schema → **kept and documented** rather than churn six builders for a null. Reflected in `schema.md §2/§10`, `design.md §8.3`.
 
-- [ ] **Unify the label-1 convention across builders.** Label 2 = tumour is universal, but label 1 = "body" in envelope datasets vs "kidney"/"lung"/organ in legacy builders.
-  - **Fix:** migrate legacy builders to the envelope label scheme (1=body, 2=tumour, 3=organ, 4=bone) as they're consolidated; until then, all consumers must read `labels` and never assume label 1.
+- [x] **Unify the label-1 convention across builders. — RESOLVED 2026-07-09.** The builders that used label 1 for a non-body structure (KiTS kidney, NLST lung) were removed. Remaining builders: envelope (1=body, 2=tumour, 3=organ, 4=bone) and `preprocess_hn.py` (label 2 only). Consumers should still read `labels` rather than hard-code, but the cross-builder label-1 conflict is gone.
   - **Refs:** `schema.md §6`.
 
-- [ ] **Converge the three tumour/layer-detection paths onto `label === 2`.** Surfaced while root-causing the P1 badge bug: "is there a tumour / which layer is it" is currently decided three different ways — `Viewer3D.tsx:90`/`mpr.ts:145` (`label === 2`, canonical), `StatsPanel.tsx:11` (`metrics && tumorMesh`, legacy), and `build_index.cjs` (now label-int, fixed). `StatsPanel` is not an active bug (envelope datasets have no `metrics`, so it correctly falls through to the acquisition panel), but it's a divergent path that will mislead the next change.
-  - **Also latent:** `StatsPanel.tsx:47` `organName = labels["1"]` assumes label 1 = organ — false for envelope datasets (label 1 = body). Only reached when `hasOrgan` (NLST-only today), so dormant, but it's the same label-1 landmine.
-  - **Fix:** when `StatsPanel` is next touched, detect the tumour by `label === 2` (or a seg-derived signal) and read the organ name by canonical label 3, not `labels["1"]`.
-  - **Refs:** `src/components/StatsPanel.tsx:11,47`.
+- [ ] **Converge the two remaining tumour-detection paths onto `label === 2`.** "Is there a tumour" is decided two ways — `Viewer3D.tsx:90`/`mpr.ts:145` (`label === 2`, canonical) and `StatsPanel.tsx:11` (`metrics && tumorMesh`, legacy). Not a bug (only single-tumour datasets have `metrics`+`tumorMesh`), but a divergent path that will mislead the next change.
+  - **Partly resolved 2026-07-09:** the `StatsPanel` `labels["1"]`=organ landmine and its `hasOrgan`/`lungVolumeCm3` branch were **removed** with the NLST cleanup, so the acquisition panel is now label-agnostic. Only the `metrics && tumorMesh` presence check remains divergent.
+  - **Fix:** when `StatsPanel` is next touched, gate the lesion panel on `label === 2` in the seg (or a seg-derived signal) rather than `tumorMesh`.
+  - **Refs:** `src/components/StatsPanel.tsx:11`.
 
 ---
 

@@ -7,7 +7,6 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "data:kits": "node --max-old-space-size=4096 scripts/preprocess.cjs",
     "data:index": "node scripts/build_index.cjs",
     "e2e:setup": "bash scripts/e2e_setup.sh",
     "e2e": "node scripts/e2e.mjs"
