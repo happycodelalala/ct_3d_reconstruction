@@ -76,6 +76,14 @@ Companion tracking: this list is the actionable form of [design.md §8](design.m
   - **Resolution:** `load_ct_mr(case_dir, to_lps=True)` — the audit passes `to_lps=False` to get true raw (no file-discovery duplication). Verified on a synthetic flipped case: raw now reports `RPI`, then `canonicalize → LPS`; the real LPS case is unchanged.
   - **Refs:** `scripts/register_ct_mr.py:42`, `scripts/geometry.py:142`.
 
+## P3 — Stale-artifact review (2026-07-09)
+
+- [x] **Stale ML approach lingering in a doc. — FIXED 2026-07-09.** `ct-mri-tumour-segmentation.md` contradicted itself: §4.5 step 4 documents that uncertainty-from-agreement was **tested and failed** (AUROC≈0.50 → recall-safe pivot), but 6 later passages (lines 245/249/291/351/371/381) still sold the abandoned uncertainty map as the live confidence mechanism. **Root cause:** the pivot updated §4.5 but the downstream sweep was incomplete. All 6 now describe the recall-safe envelope + coverage/coherence routing. Also added a "uncertainty later failed → see triage §4" pointer to `medsam2-seed-test-plan.md §8`, and repointed `head-and-neck-segmentation.md`'s asset-format refs from the (stale) README block to `schema.md`.
+
+- [ ] **Local disk artifacts (gitignored, not in repo) — user's call to reclaim ~5.8G:** `hanseg_data/HaN-Seg.zip` (4.6G, redundant after extraction to `HaN-Seg/`), `runs/sweep` (1.2G, orphaned MedSAM2 prompt/modality sweeps — no committed script produces it), `runs/medsam2_seed` (812M) + `runs/triage` (405M) experiment outputs. Not deleted here (large, user-created data). `hanseg_data/registration_check/mr_in_ct.nrrd` (~847M) is a regenerable intermediate.
+
+- [ ] **`calibration_experiment.py` — intentionally kept, not stale.** It's orphaned code-wise (`imports=0`) but is the reproducible **falsification record** for the failed uncertainty approach, referenced 4× in `tumour-triage-pipeline.md`. Keep as evidence; revisit only if the triage doc's §4/§8a results are ever inlined.
+
 ## Done in this review (2026-07-09)
 
 Doc inaccuracies found by adversarial verification against the code and already corrected:

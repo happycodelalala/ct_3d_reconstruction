@@ -127,6 +127,11 @@ The MedSAM2 API is the part we finalize when we can run it:
 
 ## 8. Results (measured 2026-07-04, RTX 3080, `case_01`)
 
+> **Note on experiment D (uncertainty):** the per-voxel uncertainty map (§4/§5) was
+> subsequently tested for calibration and **failed** (AUROC ≈ 0.50 at predicting error) —
+> confidence pivoted to a recall-safe envelope. See [tumour-triage-pipeline.md §4](tumour-triage-pipeline.md).
+> The Dice results below are the mechanism's segmentation accuracy, independent of that.
+
 Ran on the laptop as planned. Environment resolved the §6 unknowns: entry point
 `build_sam2_video_predictor_npz`, init from a numpy/tensor volume, **512²** (not 1024²),
 mask prompt via `add_new_mask`, bidirectional `propagate_in_video` with `reset_state` between,

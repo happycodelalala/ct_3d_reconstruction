@@ -242,11 +242,11 @@ into MR space, so the tumour can be prompted on the MR where it is actually visi
 (zero-shot SAM2 on 3D breast-MRI tumours, single-slice prompt) reaches **Dice ≈0.57 box /
 0.71 mask**, and H&N GTV evaluations place foundation models **below nnU-Net's clinical
 reliability** (benchmark ~0.75–0.83, §4.3). So this recipe yields a **GTVp-focused,
-human-verified rough 3D envelope + uncertainty** — a clear upgrade over the geometric taper,
+human-verified, recall-safe rough 3D envelope** — a clear upgrade over the geometric taper,
 **not** a measurement-grade contour. Two documented failure modes to design around:
 **drift on off-centre prompts** (→ step 3's center-outward re-prompt) and **scattered small
 lesions / nodal disease (GTVn)**, where propagation loses coherence (→ segment the primary
-mass, handle nodes separately and flag them low-confidence via the uncertainty map).
+mass, handle nodes separately and flag them low-confidence via the coverage/coherence routing).
 
 **Architecture.** Segmentation is an **offline GPU preprocessing job** on the remote server,
 *not* in the browser — it emits the 3D mask, and `preprocess_hn_mri.py` + the CT/MR/fusion
@@ -288,7 +288,7 @@ What it establishes:
 **Inference cost (same box).** Propagation is **~15–27 ms/slice, ≤2.2 GB VRAM** for a whole
 volume (~2–4 s total) — trivial. The **only** expense is the CT↔MR registration (~5 min, CPU),
 now cached to `mr_in_ct.nrrd` and reused. **A cohort run is registration-bound, not
-GPU-bound** — spend the GPU headroom on the ensemble/uncertainty pass (step 4), not throughput.
+GPU-bound** — spend the GPU headroom on the ensemble/consensus pass (step 4), not throughput.
 
 **Scaling this to real patients** (CT+MR only, noisy/contradicting seeds, no reliable labels,
 triage goal) — including a **normal-anatomy envelope** for false-positive suppression and
@@ -347,8 +347,8 @@ npm run data:index
 
 1. **Align** MR → CT (`register_ct_mr.py`); **inspect the QA** (checkerboard + mandible
    contour) before trusting it.
-2. **Segment** on the MR — seed → MedSAM2 with multi-prompt / ensemble **consensus +
-   uncertainty** (§4.5), offline on the GPU server; verify against the seed slice.
+2. **Segment** on the MR — seed → MedSAM2 with multi-prompt / ensemble **consensus →
+   recall-safe envelope** (§4.5), offline on the GPU server; verify against the seed slice.
 3. **Transfer** the mask to CT space with the registration transform.
 4. **Build** the dataset (`preprocess_hn_mri.py`) and view CT / MR / fusion in the app.
 
@@ -368,7 +368,7 @@ npm run data:index
 - **Interactive ≠ automatic, and expect ~0.6–0.7 Dice.** Zero-shot foundation models sit
   *below* nnU-Net's clinical reliability for H&N GTV (direct precedent: SAM2 on 3D tumour MRI
   ≈0.57 box / 0.71 mask; §4.5). This is an assisted, human-verified **rough envelope**, not a
-  measurement-grade contour — the uncertainty map tells the human where to look.
+  measurement-grade contour — the recall-safe envelope bounds where the tumour can be, and the coverage/coherence checks flag the low-confidence cases for review.
 - **Propagation drifts; nodes fragment.** SAM2-family propagation drifts from off-centre
   prompts and loses coherence on scattered small lesions — mitigate with center-outward
   re-prompting and by handling GTVn separately (§4.5). Automatic nnU-Net needs paired CT+MR
@@ -378,7 +378,7 @@ npm run data:index
   — until then, interactive (MedSAM2) is the realistic route. See §4.4.
 - **GPU:** learned segmentation runs as an offline batch on the **remote NVIDIA (CUDA)
   processing server**; the local dev machine (AMD/ROCm) only runs the browser app, so ROCm
-  isn't on the critical path. Spend the GPU on inference-time ensembling/uncertainty (§4.5),
+  isn't on the critical path. Spend the GPU on inference-time ensembling/consensus (§4.5),
   not on training you can't do without labels.
 
 ---

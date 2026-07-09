@@ -182,8 +182,8 @@ when you know the lesion stands out on CT.
 ## 6. Stage 3 — Resample, window, mesh, and manifest
 
 This stage is shared with the other datasets so H&N data lands in the **same normalized
-world space**, which is what keeps the 2D reslices and the 3D mesh consistent (see the
-main [README](../README.md#how-it-works)).
+world space**, which is what keeps the 2D reslices and the 3D mesh consistent (the
+coordinate contract is [docs/schema.md §8](schema.md#8-coordinate--grid-conventions)).
 
 - **Resample** to a fixed grid: `256 × 256 × min(Z, 220)`, picking nearest source
   indices per axis.
@@ -300,4 +300,4 @@ to the CT, and the existing `build` step turns it into a workstation-ready datas
 ---
 
 *Implementation: [`scripts/preprocess_hn.py`](../scripts/preprocess_hn.py). Asset/manifest
-format and shared coordinate space: [`README.md`](../README.md).*
+format and shared coordinate space: [`docs/schema.md`](schema.md).*
