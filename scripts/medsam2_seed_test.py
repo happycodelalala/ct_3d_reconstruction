@@ -43,6 +43,7 @@ import SimpleITK as sitk
 # scripts/ is on sys.path (this file lives here) → reuse the cached registration and the
 # robust per-slice MR window used for QA (identical logic, don't re-copy it).
 from register_ct_mr import register_cached, load_ct_mr, _mr_slice_u8
+from geometry import canonicalize, warn_if_no_overlap
 
 # Make the vendored MedSAM2 `sam2` package importable without a setup.py install:
 # sam2/__init__.py self-registers its hydra config module on import, so PYTHONPATH
@@ -72,6 +73,8 @@ def _resample_to_grid(img, ref, is_mask):
     correctly on the CT grid (same trick as register_ct_mr.mandible_qa)."""
     interp = sitk.sitkNearestNeighbor if is_mask else sitk.sitkLinear
     dtype = sitk.sitkUInt8 if is_mask else sitk.sitkFloat32
+    if is_mask:
+        warn_if_no_overlap(img, ref, "mask")
     return sitk.Resample(sitk.Cast(img, dtype), ref, sitk.Transform(), interp, 0, dtype)
 
 
@@ -91,7 +94,7 @@ def load_inputs(case_dir=None, mr_path=None, mask_path=None, ct_path=None, oar="
         mask_vol = _resample_to_grid(sitk.ReadImage(cand[0]), ct, is_mask=True)
         return ct, mr_vol, mask_vol, ct
     # fast path: pre-registered MR + a mask, aligned to the MR grid
-    mr_vol = sitk.ReadImage(mr_path, sitk.sitkFloat32)
+    mr_vol = canonicalize(sitk.ReadImage(mr_path, sitk.sitkFloat32), os.path.basename(mr_path))
     mask_vol = _resample_to_grid(sitk.ReadImage(mask_path), mr_vol, is_mask=True)
     ct_vol = _resample_to_grid(sitk.ReadImage(ct_path), mr_vol, is_mask=False) if ct_path else None
     return mr_vol, mr_vol, mask_vol, ct_vol

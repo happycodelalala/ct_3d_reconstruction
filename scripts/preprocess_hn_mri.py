@@ -32,6 +32,7 @@ from skimage import measure
 from skimage.filters import gaussian
 
 from register_ct_mr import register_cached, load_ct_mr  # validated, cached MR->CT registration
+from geometry import assert_axis_aligned, warn_if_no_overlap
 
 OUT_XY = 256               # in-plane output resolution
 OUT_Z_CAP = 220            # cap on output slices
@@ -42,7 +43,11 @@ CT_HU_LO, CT_HU_HI = -200, 400   # soft-tissue storage window (H&N); app re-wind
 def output_grid(ct):
     """A reference grid sharing the CT's physical space, downsampled to
     OUT_XY x OUT_XY x min(Z, cap). Everything is resampled into this grid so the
-    CT, MR, mask and mesh all register."""
+    CT, MR, mask and mesh all register. The grid inherits the CT's origin/direction, so
+    guard that the CT is axis-aligned — the front-end renders this grid as an index cube
+    and cannot represent oblique cosines (load_ct_mr canonicalizes, so this is a backstop
+    for any caller that hands in a raw CT)."""
+    assert_axis_aligned(ct, "CT reference grid")
     sz, sp = ct.GetSize(), ct.GetSpacing()
     oz = int(min(sz[2], OUT_Z_CAP))
     out_size = [OUT_XY, OUT_XY, oz]
@@ -127,6 +132,7 @@ def build(case_dir, out_dir, ds_id, title, roi_glob, roi_label):
     }
 
     # resample the ROI mask into the shared output grid (CT/MR done in prepare_output_volumes)
+    warn_if_no_overlap(man, ref, os.path.basename(cand[0]))
     mask_out = to_zyx(sitk.Resample(man, ref, sitk.Transform(), sitk.sitkNearestNeighbor, 0, sitk.sitkUInt8)) > 0
     if mask_out.sum() == 0:
         raise SystemExit("mask empty after resample — check the ROI/params")

@@ -256,6 +256,9 @@ curl -L "https://zenodo.org/records/7442914/files/HaN-Seg.zip?download=1" -o han
 .venv/bin/python -c "import zipfile; zipfile.ZipFile('hanseg_data/HaN-Seg.zip').extractall('hanseg_data')"
 uv pip install --python .venv SimpleITK scikit-image
 
+# (optional) audit orientation: are CT, MR and every annotation in one aligned frame?
+.venv/bin/python scripts/geometry.py --case-dir hanseg_data/HaN-Seg/set_1/case_01
+
 # (optional) sanity-check the MR->CT registration on one case (writes QA overlays)
 .venv/bin/python scripts/register_ct_mr.py --case-dir hanseg_data/HaN-Seg/set_1/case_01
 
@@ -271,6 +274,16 @@ resamples the CT, the registered MR, and a chosen OAR (default: **mandible, as a
 tumour stand-in** — HaN-Seg ships no GTV) into one shared grid, and emits the unified
 assets with a second `mri` volume per timepoint. Swap the OAR for a real tumour mask
 later; nothing downstream changes.
+
+**Orientation guardrails + automatic alignment.** The workstation renders each volume as an
+axis-aligned index cube, so every CT, MR and mask is reoriented to **LPS** on load
+(`scripts/geometry.py::canonicalize`) — a flipped or axis-permuted acquisition is normalized
+to that frame automatically (a no-op for already-LPS data; physical points are untouched, so
+cached registrations stay valid). A genuinely *oblique* volume is **rejected** with a clear
+message rather than silently mislabelled, and an annotation whose physical extent doesn't
+intersect the CT frame raises a loud warning instead of shipping a blank layer. Run
+`scripts/geometry.py --case-dir <case>` to audit a case's CT/MR/annotation alignment before
+building (on `case_01`: CT+MR both `LPS`, all 30 OARs aligned).
 
 **MedSAM2 zero-shot segmentation (optional).** Instead of the ground-truth OAR, you can
 produce the mask with MedSAM2 — a single seed slice propagated to a 3D mask — and feed *that*
@@ -345,6 +358,7 @@ scripts/
                           contour auto-propagated to a rough 3D tumour envelope
   register_ct_mr.py       HaN-Seg: validate MR->CT registration (SimpleITK MI, rigid+affine)
   preprocess_hn_mri.py    HaN-Seg: CT+MR -> assets carrying BOTH volumes (fusion) + OAR-as-tumour mesh
+  geometry.py             orientation guardrails: LPS canonicalization, axis-aligned + overlap checks; `--case-dir` audits a case
 ```
 
 To add a dataset: write a preprocessing script that emits the unified `manifest.json`

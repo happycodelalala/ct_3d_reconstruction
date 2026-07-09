@@ -26,6 +26,8 @@ import os
 import numpy as np
 import SimpleITK as sitk
 
+from geometry import canonicalize  # reorient CT/MR to a common axis-aligned (LPS) frame
+
 
 # --------------------------------------------------------------------------- IO
 def find_one(case_dir, *needles):
@@ -43,8 +45,11 @@ def load_ct_mr(case_dir):
     if not ct_path or not mr_path:
         raise SystemExit(f"could not find CT and MR .nrrd in {case_dir}\n"
                          f"  CT={ct_path}  MR={mr_path}")
-    ct = sitk.ReadImage(ct_path, sitk.sitkFloat32)
-    mr = sitk.ReadImage(mr_path, sitk.sitkFloat32)
+    # Reorient both to LPS so a flipped/axis-permuted acquisition is normalised to the
+    # identity frame the pipeline assumes (no-op for already-LPS data; physical points are
+    # unchanged, so the cached MR->CT transform stays valid). Oblique volumes are rejected.
+    ct = canonicalize(sitk.ReadImage(ct_path, sitk.sitkFloat32), f"CT ({os.path.basename(ct_path)})")
+    mr = canonicalize(sitk.ReadImage(mr_path, sitk.sitkFloat32), f"MR ({os.path.basename(mr_path)})")
     print(f"  CT {os.path.basename(ct_path)}  size {ct.GetSize()}  spacing "
           f"{tuple(round(s, 2) for s in ct.GetSpacing())}")
     print(f"  MR {os.path.basename(mr_path)}  size {mr.GetSize()}  spacing "

@@ -28,6 +28,7 @@ from skimage import measure
 
 from preprocess_hn_mri import (prepare_output_volumes, to_zyx, mesh_from_mask,
                                OUT_XY, CT_HU_LO, CT_HU_HI)
+from geometry import warn_if_no_overlap
 
 # fixed layer colours (RGB 0..255); the tumour layer's colour comes from --tumour-color
 C_BODY, C_BONE, C_ORGAN = [90, 140, 200], [222, 216, 198], [150, 110, 205]
@@ -44,9 +45,12 @@ def body_mask(ct_hu_zyx):
 
 
 def _to_grid(img_path, ref):
-    """Read a mask NRRD and resample (nearest) onto the shared output grid by physical space."""
-    r = sitk.Resample(sitk.ReadImage(img_path, sitk.sitkUInt8), ref, sitk.Transform(),
-                      sitk.sitkNearestNeighbor, 0, sitk.sitkUInt8)
+    """Read a mask NRRD and resample (nearest) onto the shared output grid by physical space.
+    Warns if the annotation lands (near-)empty on the grid — i.e. it sat in a different
+    physical frame and does not line up with the CT."""
+    src = sitk.ReadImage(img_path, sitk.sitkUInt8)
+    warn_if_no_overlap(src, ref, os.path.basename(img_path))
+    r = sitk.Resample(src, ref, sitk.Transform(), sitk.sitkNearestNeighbor, 0, sitk.sitkUInt8)
     return to_zyx(r) > 0
 
 
