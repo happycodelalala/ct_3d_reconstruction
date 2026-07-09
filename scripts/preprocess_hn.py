@@ -22,14 +22,14 @@ Pipeline:
 
 Then `npm run data:index` to add it to the patient picker.
 """
-import argparse, os, gzip, json, shutil
+import argparse, os, json, shutil
 import numpy as np
 from scipy import ndimage
-from skimage import measure
 from skimage.morphology import disk
 from skimage.measure import label as cclabel
-from skimage.filters import gaussian
 from rt_utils import RTStructBuilder
+
+from asset_common import mesh_from_mask, window_u8, write_gz  # shared pure asset helpers
 
 OUT_XY = 256          # in-plane output resolution
 OUT_Z_CAP = 220       # cap on output slices
@@ -153,17 +153,6 @@ def to_out(vol, idx):
     return vol[np.ix_(xi, yi, zi)].transpose(2, 1, 0)   # (Z,Y,X)
 
 
-def mesh_from_mask(mask_zyx, ext, sigma=0.6, step=1):
-    sm = gaussian(mask_zyx.astype(np.float32), sigma=sigma)
-    v, fc, _, _ = measure.marching_cubes(sm, level=0.5, step_size=step)
-    Zd, Yd, Xd = mask_zyx.shape
-    ox = ((v[:, 2] / (Xd - 1)) - 0.5) * 2 * ext[0]
-    oy = ((v[:, 1] / (Yd - 1)) - 0.5) * 2 * ext[1]
-    oz = ((v[:, 0] / (Zd - 1)) - 0.5) * 2 * ext[2]
-    return ({"positions": np.stack([ox, oy, oz], 1).round(4).reshape(-1).tolist(),
-             "indices": fc.astype(np.int32).reshape(-1).tolist()}, len(v), len(fc))
-
-
 # --------------------------------------------------------------------- emit
 def build(ct, tumor_native, zooms, out_dir, ds_id, title, roi):
     if os.path.isdir(out_dir):
@@ -172,7 +161,7 @@ def build(ct, tumor_native, zooms, out_dir, ds_id, title, roi):
 
     oz = int(min(ct.shape[2], OUT_Z_CAP))
     idx = resample_idx(ct.shape, oz)
-    ct_u8 = np.clip((to_out(ct, idx) - HU_LO) / (HU_HI - HU_LO) * 255.0, 0, 255).astype(np.uint8)
+    ct_u8 = window_u8(to_out(ct, idx), HU_LO, HU_HI)
     tumor_out = (to_out(tumor_native, idx) > 0).astype(np.uint8)        # (Z,Y,X)
     if tumor_out.sum() == 0:
         raise SystemExit("propagated tumour empty after resample — check the seed/params")
@@ -193,10 +182,8 @@ def build(ct, tumor_native, zooms, out_dir, ds_id, title, roi):
                "tumorVoxels": vox, "bboxMm": bbmm}
     json.dump(metrics, open(os.path.join(out_dir, "metrics.json"), "w"))
 
-    with open(os.path.join(out_dir, "ct.bin.gz"), "wb") as f:
-        f.write(gzip.compress(ct_u8.reshape(-1).tobytes(), 6))
-    with open(os.path.join(out_dir, "seg.bin.gz"), "wb") as f:
-        f.write(gzip.compress(seg.reshape(-1).tobytes(), 6))
+    write_gz(os.path.join(out_dir, "ct.bin.gz"), ct_u8)
+    write_gz(os.path.join(out_dir, "seg.bin.gz"), seg)
 
     note = "Tumour is a rough envelope propagated from a single annotated slice (CT-only) — not measurement-grade"
     manifest = {

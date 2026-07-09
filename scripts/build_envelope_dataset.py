@@ -17,7 +17,6 @@ Reuses the grid / windowing / meshing helpers from preprocess_hn_mri (no duplica
 """
 import argparse
 import glob
-import gzip
 import json
 import os
 
@@ -26,8 +25,8 @@ import SimpleITK as sitk
 from scipy.ndimage import binary_fill_holes
 from skimage import measure
 
-from preprocess_hn_mri import (prepare_output_volumes, to_zyx, mesh_from_mask,
-                               OUT_XY, CT_HU_LO, CT_HU_HI)
+from asset_common import mesh_from_mask, write_gz  # shared pure asset helpers
+from preprocess_hn_mri import prepare_output_volumes, to_zyx, OUT_XY, CT_HU_LO, CT_HU_HI
 from geometry import warn_if_no_overlap
 
 # fixed layer colours (RGB 0..255); the tumour layer's colour comes from --tumour-color
@@ -118,8 +117,7 @@ def main():
         print(f"  label {label} {name:24s} {int(mask.sum()):>8} vox  {nv}v/{nf}f")
 
     for name, arr in (("ct.bin.gz", ct_u8), ("mri.bin.gz", mr_u8), ("seg.bin.gz", seg)):
-        with open(os.path.join(out_dir, name), "wb") as fp:
-            fp.write(gzip.compress(arr.reshape(-1).tobytes(), 6))
+        write_gz(os.path.join(out_dir, name), arr)
 
     manifest = {
         "id": ds_id,

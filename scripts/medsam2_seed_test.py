@@ -44,6 +44,7 @@ import SimpleITK as sitk
 # robust per-slice MR window used for QA (identical logic, don't re-copy it).
 from register_ct_mr import register_cached, load_ct_mr, _mr_slice_u8
 from geometry import canonicalize, warn_if_no_overlap
+from asset_common import window_u8  # shared window-to-uint8 (identical clip-then-scale)
 
 # Make the vendored MedSAM2 `sam2` package importable without a setup.py install:
 # sam2/__init__.py self-registers its hydra config module on import, so PYTHONPATH
@@ -108,16 +109,14 @@ def mr_to_uint8(mr_arr):
     nz = mr_arr[mr_arr > 0]
     lo, hi = (np.percentile(nz, 2.0), np.percentile(nz, 99.5)) if nz.size else (0.0, 1.0)
     hi = max(hi, lo + 1e-3)
-    v = np.clip(mr_arr, lo, hi)
-    return ((v - lo) / (hi - lo) * 255.0).astype(np.uint8)
+    return window_u8(mr_arr, lo, hi)
 
 
 def ct_to_uint8(ct_arr, lo=-500.0, hi=1300.0):
     """Bone-emphasis CT window → uint8. Cortical bone (~1000+ HU) goes near-white and
     soft tissue mid-grey, so the mandible is a crisp bright target — the opposite of
     T1 MR, where cortical bone is a signal void."""
-    v = np.clip(ct_arr, lo, hi)
-    return ((v - lo) / (hi - lo) * 255.0).astype(np.uint8)
+    return window_u8(ct_arr, lo, hi)
 
 
 def to_model_input(vol_u8):

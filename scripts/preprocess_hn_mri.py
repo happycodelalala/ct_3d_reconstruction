@@ -22,15 +22,13 @@ Outputs to public/data/<id>/:
 """
 import argparse
 import glob
-import gzip
 import json
 import os
 
 import numpy as np
 import SimpleITK as sitk
-from skimage import measure
-from skimage.filters import gaussian
 
+from asset_common import mesh_from_mask, window_u8, write_gz  # shared pure asset helpers
 from register_ct_mr import register_cached, load_ct_mr  # validated, cached MR->CT registration
 from geometry import assert_axis_aligned, warn_if_no_overlap
 
@@ -66,7 +64,7 @@ def to_zyx(img):
 
 
 def window_ct_u8(a):
-    return np.clip((a - CT_HU_LO) / (CT_HU_HI - CT_HU_LO) * 255.0, 0, 255).astype(np.uint8)
+    return window_u8(a, CT_HU_LO, CT_HU_HI)
 
 
 def window_mr_u8(a):
@@ -75,21 +73,7 @@ def window_mr_u8(a):
     nz = a[a > 0]
     lo, hi = (np.percentile(nz, 2), np.percentile(nz, 99.5)) if nz.size else (0.0, 1.0)
     hi = max(float(hi), float(lo) + 1.0)
-    return np.clip((a - lo) / (hi - lo) * 255.0, 0, 255).astype(np.uint8)
-
-
-# ------------------------------------------------------------------- meshing
-def mesh_from_mask(mask_zyx, ext, sigma=0.6, step=1):
-    """Marching-cubes isosurface, vertices mapped into the shared [-ext, +ext] space
-    (identical mapping to preprocess_hn.py so mesh and slices register)."""
-    sm = gaussian(mask_zyx.astype(np.float32), sigma=sigma)
-    v, fc, _, _ = measure.marching_cubes(sm, level=0.5, step_size=step)
-    Zd, Yd, Xd = mask_zyx.shape
-    ox = ((v[:, 2] / (Xd - 1)) - 0.5) * 2 * ext[0]
-    oy = ((v[:, 1] / (Yd - 1)) - 0.5) * 2 * ext[1]
-    oz = ((v[:, 0] / (Zd - 1)) - 0.5) * 2 * ext[2]
-    return ({"positions": np.stack([ox, oy, oz], 1).round(4).reshape(-1).tolist(),
-             "indices": fc.astype(np.int32).reshape(-1).tolist()}, len(v), len(fc))
+    return window_u8(a, lo, hi)
 
 
 # --------------------------------------------------------------------- emit
@@ -144,8 +128,7 @@ def build(case_dir, out_dir, ds_id, title, roi_glob, roi_label):
 
     # write assets (uint8 volumes ravel Z,Y,X -> x-fastest frontend layout)
     for name, arr in (("ct.bin.gz", ct_u8), ("mri.bin.gz", mr_u8), ("seg.bin.gz", seg)):
-        with open(os.path.join(out_dir, name), "wb") as f:
-            f.write(gzip.compress(arr.reshape(-1).tobytes(), 6))
+        write_gz(os.path.join(out_dir, name), arr)
     json.dump(tmesh, open(os.path.join(out_dir, "tumor.json"), "w"))
     json.dump(metrics, open(os.path.join(out_dir, "metrics.json"), "w"))
 

@@ -149,7 +149,7 @@ Built by `scripts/build_index.cjs` (`npm run data:index`) by scanning every `man
 |---|---|
 | Payload | Raw voxel bytes, no header. |
 | dtype | **uint8** (0..255). |
-| Compression | gzip. Python builders use **level 6** (`gzip.compress(bytes, 6)`). |
+| Compression | gzip **level 6**, deterministic — `asset_common.write_gz` sets `mtime=0`, so identical data yields identical bytes across rebuilds. |
 | Element count | `X · Y · Z` = `dims[0]·dims[1]·dims[2]`. |
 | Ravel order | numpy C-order from `(Z,Y,X)` → **X fastest**. |
 | **Index formula** | **`idx = x + X·(y + Y·z)`** where `X=dims[0]`, `Y=dims[1]`. |
@@ -246,7 +246,7 @@ Dataset builders and their outputs. Full arg detail in each script's `--help`; c
 | `geometry.py` | `--case-dir` | — | (audit CLI; prints orientation + alignment, non-zero exit on misalignment) |
 | `build_index.cjs` | scans `public/data/*/manifest.json` | — | `public/data/index.json` |
 
-**Legacy builder:** `preprocess_hn.py` (DICOM + RTSTRUCT single-slice → `hn_<PID>/`, tumour = label 2, emits `tumorMesh`). It re-implements the grid/window/mesh primitives independently — a dedup target ([design.md §8](design.md#8-known-drift--alignment-worklist)). The KiTS/NLST builders were removed 2026-07-09 (data no longer needed).
+**Legacy builder:** `preprocess_hn.py` (DICOM + RTSTRUCT single-slice → `hn_<PID>/`, tumour = label 2, emits `tumorMesh`). It shares the pure asset helpers via `asset_common` (`mesh_from_mask`/`window_u8`/`write_gz`); only its numpy index-based grid resampling is bespoke (it works on numpy arrays from `rt_utils`, not SimpleITK images). The KiTS/NLST builders were removed 2026-07-09 (data no longer needed).
 
 **seg volume `metrics.json` note:** `bboxMm` is ordered `[dx, dy, dz]` while arrays are `(z,y,x)` — the builder reorders explicitly (`preprocess_hn_mri.py:127`).
 

@@ -49,27 +49,29 @@ ONCOVOL turns paired **CT + MRI** studies into an interactive 3D reconstruction 
 
 | Module | Owns | Key exports |
 |---|---|---|
+| `asset_common.py` | Dependency-light shared helpers — **pure numpy + scikit-image, no SimpleITK** — so every builder (incl. the numpy legacy one) and the MedSAM2 preprocessing share them. `window_u8` is the single window-to-uint8 primitive (`window_ct_u8`/`window_mr_u8`/`mr_to_uint8`/`ct_to_uint8` all delegate to it). | `mesh_from_mask`, `window_u8`, `write_gz` |
 | `geometry.py` | Orientation guardrails & auto-alignment (LPS canonicalization, axis-aligned assertion, physical-overlap checks) + a `--case-dir` audit CLI. | `canonicalize`, `assert_axis_aligned`, `assert_same_frame`, `masks_overlap_grid`, `warn_if_no_overlap` |
 | `register_ct_mr.py` | MR→CT registration (MI, rigid+affine), the `.tfm` cache, QA overlays, and `mr_in_ct.nrrd`. | `load_ct_mr`, `register`, `register_cached`, `transform_cache_path` |
-| `preprocess_hn_mri.py` | The shared grid/window/mesh helpers + the single-tumour CT+MR dataset builder. | `output_grid`, `to_zyx`, `mesh_from_mask`, `window_ct_u8`/`window_mr_u8`, `prepare_output_volumes` |
+| `preprocess_hn_mri.py` | The SimpleITK output grid + cached-registration setup + the single-tumour CT+MR dataset builder (pure asset helpers now live in `asset_common`). | `output_grid`, `to_zyx`, `prepare_output_volumes`, `window_ct_u8`/`window_mr_u8` |
 | `build_envelope_dataset.py` | The multi-label **envelope** dataset builder (body/bone/organ/tumour, per-label colors + meshes). | (CLI) |
 | `medsam2_seed_test.py` | Promptable single-seed→3D MedSAM2 engine + seed-test harness. | `prepare_case`, `segment`, `dice` |
 | `triage_pipeline.py` | Recall-safe tumour-envelope triage (ensemble → consensus → dilate → prune → route). | `recall_safe_envelopes`, `recall_precision` |
 | `calibration_experiment.py` | The (failed, documented) uncertainty-calibration experiment behind the triage pivot. | (CLI) |
 | `build_index.cjs` | Scans manifests → `public/data/index.json` (the picker registry). | (CLI, `npm run data:index`) |
-| `preprocess_hn.py` | Legacy CT-only single-slice H&N builder (DICOM + RTSTRUCT). Self-contained. | (CLI) |
+| `preprocess_hn.py` | Legacy CT-only single-slice H&N builder (DICOM + RTSTRUCT). Shares `asset_common`; only its numpy index-based grid resampling is bespoke. | (CLI) |
 | `e2e.mjs`, `e2e_setup.sh` | Headless Puppeteer smoke test of the real app. | (CLI, `npm run e2e`) |
 
 ### 3.2 Shared-helper graph (the dedup structure)
 
-The **CT+MR family** is deliberately layered so nothing is re-implemented; the **legacy family** predates it and duplicates the primitives (a known dedup target — [§8](#8-known-drift--alignment-worklist)).
+Pure asset helpers live in `asset_common` (no SimpleITK), so **every** builder shares them — including the numpy-based legacy `preprocess_hn.py`. The SimpleITK grid + registration chain layers above.
 
 ```
-geometry.py ─────────────────────────────────────────────┐ (canonicalize, asserts, overlap)
+asset_common.py ─(mesh_from_mask, window_u8, write_gz) ── shared by ALL builders + MedSAM2 prep
+geometry.py ─────(canonicalize, asserts, overlap) ───────┐
      ▲                                                    │
 register_ct_mr.py ──(load_ct_mr, register_cached)         │
      ▲                                                    │
-preprocess_hn_mri.py ──(output_grid, mesh_from_mask, …) ──┤
+preprocess_hn_mri.py ──(output_grid, prepare_output_volumes) ──┤
      ▲                        ▲                           │
 build_envelope_dataset.py     │                           │
                               │                           │
@@ -77,7 +79,8 @@ medsam2_seed_test.py ──(prepare_case, segment, dice) ─────┘
      ▲                        ▲
 triage_pipeline.py            calibration_experiment.py
 
-Standalone (own copy of grid/window/mesh/gzip): preprocess_hn.py.
+preprocess_hn.py (legacy, numpy) — imports asset_common; only its numpy index-based
+grid resampling is its own (it can't use the SimpleITK output_grid).
 ```
 
 **Rule of thumb for new imaging code:** enter through `load_ct_mr` (gets you canonicalization + cached registration for free) and build on `preprocess_hn_mri`'s `prepare_output_volumes` / `mesh_from_mask`. Do not re-implement the grid, windowing, meshing, or gzip — that is exactly the duplication this doc exists to prevent.
@@ -155,7 +158,7 @@ These are the concrete deduplication/alignment targets this doc-pair is meant to
 2. **README manifest example is missing fields** now emitted: `storageWindowHU`, `mriWL`, `labelColors`, `timepoints[].mri`, `timepoints[].meshes[]`.
 3. **Vestigial manifest field.** Top-level `meshes` is always `null` (the live mesh list is `timepoints[].meshes`); kept as a harmless vestige rather than churning six builders. `storageWindowHU` is emitted-but-unrendered provenance, now acknowledged in the TS `Manifest` type (drift resolved). Manifest `hasSegmentation` *is* read — `App.tsx`/`ControlRail.tsx` gate the segmentation UI on it — so it stays.
 4. **Two mesh-carrying mechanisms.** Legacy `tumorMesh`/`organMesh` (hard-mapped to labels 2/1) vs the current `timepoints[].meshes[]`. New builders should emit only `meshes[]`; the legacy slots stay for old datasets.
-5. **One legacy builder still duplicates primitives.** The KiTS/NLST builders were removed (2026-07-09, no longer needed); only `preprocess_hn.py` (CT-only single-slice H&N) still re-implements grid/window/mesh/gzip instead of reusing `preprocess_hn_mri` helpers. Consolidate or retire when next touched.
+5. ~~Builders duplicate primitives.~~ **RESOLVED 2026-07-09.** KiTS/NLST builders removed; the verbatim `mesh_from_mask` duplicate + repeated window/gzip patterns extracted to `asset_common.py` (pure numpy/skimage, no SimpleITK), now shared by `preprocess_hn_mri`, `build_envelope_dataset`, and the legacy `preprocess_hn.py`. Verified byte-identical envelope rebuild; `write_gz(mtime=0)` also makes builds reproducible. Only `preprocess_hn.py`'s numpy grid resampling stays bespoke (it can't use the SimpleITK `output_grid`).
 6. **Label-1 semantics vary.** Label 2 = tumour is universal; label 1 = "body" in envelope datasets but "kidney"/"lung"/organ in legacy builders. Documented canonically in [schema.md](schema.md#labels--colors) — don't assume label 1 without checking `labels`.
 7. ~~No runtime manifest validation.~~ **RESOLVED 2026-07-09.** `dataset.ts::validateManifest` now checks the unconditionally-dereferenced fields at load (via a shared `fetchJson` guard), so a malformed or unavailable manifest fails with an actionable message instead of a deep `undefined` access or a cryptic 404 `SyntaxError`. (Not a full schema validator — it covers the load-bearing fields, not every optional one.)
 8. **Windowing conventions are split** (`defaultWL`/`mriWL` normalized 0..1 for the UI vs `storageWindowHU`/per-builder HU windows at preprocess). Documented, not yet unified.
