@@ -139,7 +139,7 @@ def _describe(name, img):
 def _audit(case_dir):
     from register_ct_mr import load_ct_mr  # local import: avoids a cycle at module load
     print(f"[audit] {case_dir}")
-    ct, mr = load_ct_mr(case_dir)
+    ct, mr = load_ct_mr(case_dir, to_lps=False)  # RAW, so we report the true source orientation
     print("raw orientations:")
     _describe("CT", ct)
     _describe("MR", mr)
