@@ -98,39 +98,46 @@ Per dataset, the pipeline emits:
 
 ```
 public/data/<id>/
-  manifest.json        dataset descriptor (see schema below)
-  ct_t*.bin.gz         gzipped uint8 windowed CT volume, one per timepoint
-  seg_t*.bin.gz        gzipped uint8 label volume (1 = organ, 2 = tumour), optional
-  tumor_t*.json        tumour isosurface { positions[], indices[] }, optional
-  organ_t*.json        organ isosurface, optional
-  metrics.json         measured tumour metrics, optional
+  manifest.json        dataset descriptor (full contract: docs/schema.md)
+  ct.bin.gz            gzipped uint8 windowed CT volume
+  mri.bin.gz           gzipped uint8 registered MR volume (CT+MRI datasets), optional
+  seg.bin.gz           gzipped uint8 multi-label mask (1=body 2=tumour 3=organ 4=bone), optional
+  mesh<label>.json     one isosurface { positions[], indices[] } per seg label
+  metrics.json         measured tumour/organ metrics, optional
 ```
 
-The browser fetches these, inflates the volumes (it auto-detects whether the host
-already gunzipped them), and renders. Reslicing/MIP run on the volume directly; the
-meshes load straight into Three.js.
+Asset **filenames are whatever the manifest's timepoint fields point to** — the names
+above are the current (envelope) convention; older multi-timepoint builders emit
+per-timepoint names like `ct_t0.bin.gz` / `organ_t0.json`. The browser fetches them,
+inflates the volumes (auto-detecting whether the host already gunzipped them), and
+renders. Reslicing/MIP run on the volume directly; the meshes load straight into Three.js.
 
 ### Unified manifest
 
+Every dataset is described by one `manifest.json` — the **contract between the pipeline and
+the browser**. The full field-by-field reference (types, producers, consumers, coordinate
+conventions) is **[docs/schema.md](docs/schema.md)**; the shape, abridged:
+
 ```jsonc
 {
-  "id": "nlst_100012",
-  "title": "NLST · 100012",
-  "modality": "CT · LDCT",
-  "dims": [256, 256, 160],              // X, Y, Z(=axial slice axis)
-  "worldExtent": [0.892, 0.892, 1.0],   // half-width per axis (shared space)
-  "spacingMm": [0.547, 0.547, 2.0],
-  "defaultWL": { "window": 0.72, "level": 0.4 },
+  "id": "hanseg_case_01_gt",
+  "modality": "CT + MR · T1",
+  "dims": [256, 256, 202],                          // X, Y, Z(=axial slice axis)
+  "worldExtent": [1.0, 1.0, 0.708],                 // half-width per axis (shared normalized space)
+  "spacingMm": [2.23, 2.23, 2.0],
+  "defaultWL": { "window": 0.85, "level": 0.5 },    // normalized 0..1; "mriWL" likewise for the MR
   "hasSegmentation": true,
-  "labels": { "1": "lung", "2": "tumour" },
-  "clinicalNote": "Adenocarcinoma · Stage IA · right upper lobe",
+  "labels": { "1": "body", "2": "tumour", "3": "organ", "4": "bone" },
+  "labelColors": { "2": [255, 150, 70] },           // label -> RGB 0..255 (else palette)
   "timepoints": [
-    { "id": "t0", "label": "1999-01-02", "ct": "ct_t0.bin.gz", "seg": "seg_t0.bin.gz", "organMesh": "organ_t0.json", "lungVolumeCm3": 6197 },
-    { "id": "t1", "label": "2000-01-02", "ct": "ct_t1.bin.gz", "seg": "seg_t1.bin.gz", "organMesh": "organ_t1.json", "tumorMesh": "tumor_t1.json", "lungVolumeCm3": 6098 }
+    { "id": "t0", "ct": "ct.bin.gz", "mri": "mri.bin.gz", "seg": "seg.bin.gz",
+      "meshes": [ { "label": 2, "file": "mesh2.json" } ] }  // one isosurface per label
   ],
-  "metrics": "metrics.json"
+  "metrics": "metrics.json"                          // or null
 }
 ```
+
+See **[docs/design.md](docs/design.md)** for how the pieces fit and the coordinate contract.
 
 ---
 
@@ -334,36 +341,41 @@ npm run data:index
 
 ## Project layout
 
+Architecture & module responsibilities: **[docs/design.md](docs/design.md)**. Quick map:
+
 ```
 src/
+  App.tsx             workstation layout (hosts the panels)
+  main.tsx            React entry point
+  store.ts            zustand state (dataset, timepoint, slice, crosshair, toggles, W/L)
   lib/
-    dataset.ts        dataset registry + loader (N timepoints, optional seg/meshes);
-                      renders real axial slices; normalized coordinate mapping
+    dataset.ts        dataset registry + loader; all TS types; normalized coordinate mapping;
+                      real axial-slice rendering + windowing + label tinting
     mpr.ts            world-space sampler + reslice (coronal/sagittal/oblique) + MIP
     sliceTexture.ts   wraps a slice/reformat as a Three.js texture
   components/
-    App.tsx           workstation layout + dataset switcher
-    ControlRail.tsx   render-layer toggles + CT windowing
-    Viewer3D.tsx      r3f scene: meshes, synced cut-plane, layer stack, MPR ortho box
+    PatientPicker.tsx searchable dataset/patient switcher (reads index.json)
+    ControlRail.tsx   per-label render toggles + CT windowing
+    Viewer3D.tsx      r3f scene: per-label meshes, cut-plane, layer stack, MPR ortho box
     CTPanel.tsx       2D axial CT viewer + crosshair + slice scrubber
     MPRStrip.tsx      coronal / sagittal / oblique / MIP reformat tiles
     StatsPanel.tsx    lesion metrics (segmented) or acquisition info
     Timeline.tsx      timepoint scrubber + playback
-  store.ts            zustand state (dataset, timepoint, slice, crosshair, toggles, W/L)
-scripts/
-  preprocess.cjs          KiTS:  NIfTI -> assets (Node: nifti-reader-js + isosurface)
-  preprocess_nlst.py      NLST:  DICOM -> assets (Python: pydicom + scikit-image)
-  preprocess_nlst_tumor.py NLSTseg: NIfTI+DICOM -> assets (Python: nibabel + pydicom + skimage)
-  preprocess_hn.py        H&N:   DICOM+RTSTRUCT -> assets (Python: rt-utils); a single-slice
-                          contour auto-propagated to a rough 3D tumour envelope
-  register_ct_mr.py       HaN-Seg: validate MR->CT registration (SimpleITK MI, rigid+affine)
-  preprocess_hn_mri.py    HaN-Seg: CT+MR -> assets carrying BOTH volumes (fusion) + OAR-as-tumour mesh
-  geometry.py             orientation guardrails: LPS canonicalization, axis-aligned + overlap checks; `--case-dir` audits a case
+scripts/              data pipeline — module map & dedup graph in docs/design.md §3
+  register_ct_mr.py         HaN-Seg: MR->CT registration (SimpleITK MI) + .tfm cache + QA overlays
+  preprocess_hn_mri.py      HaN-Seg: CT+MR -> shared-grid assets; the shared grid/window/mesh helpers
+  build_envelope_dataset.py multi-label envelope builder (body/bone/organ/tumour + per-label meshes)
+  medsam2_seed_test.py      MedSAM2 promptable single-seed -> 3D tumour engine + seed test
+  triage_pipeline.py        recall-safe tumour-envelope triage (ensemble -> consensus -> route)
+  geometry.py               orientation guardrails: LPS canonicalization + axis-aligned/overlap checks
+  build_index.cjs           scan manifests -> public/data/index.json (the picker registry)
+  preprocess.cjs, preprocess_nlst*.py, preprocess_hn.py   legacy per-dataset builders (KiTS, NLST, single-slice H&N)
 ```
 
 To add a dataset: write a preprocessing script that emits the unified `manifest.json`
-+ gzipped `uint8` CT volume(s) (+ optional seg/meshes/metrics), then add an entry to
-`DATASETS` in `src/lib/dataset.ts`. No component changes needed.
++ gzipped `uint8` volume(s) (+ optional seg/meshes/metrics) under `public/data/<id>/`,
+then run `npm run data:index` to register it in the picker. No component changes needed.
+Contracts: **[docs/schema.md](docs/schema.md)**.
 
 ---
 

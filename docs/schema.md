@@ -43,7 +43,7 @@ One per dataset. The frontend type is `Manifest` in `src/lib/dataset.ts:5-32`.
 | `dims` | `[number,number,number]` | ✓ | ✓ | `[X, Y, Z]`; **Z is the slice axis**. |
 | `worldExtent` | `[number,number,number]` | ✓ | ✓ | Per-axis half-width, normalized so the largest physical axis = 1.0. |
 | `spacingMm` | `[number,number,number]` | ✓ | ✓ | Output voxel spacing (mm), `[x,y,z]`. Display + reference only. |
-| `storageWindowHU` | `{lo,hi}` | ✓ | ✗ | HU window used to pack the CT to uint8. **Not in the TS type; never read.** Metadata for reproducibility. |
+| `storageWindowHU` | `{lo,hi}` optional? | ✓ | ✗ | HU window used to pack the CT to uint8. In the TS type as provenance metadata; not rendered by the UI. |
 | `defaultWL` | `{window,level}` | ✓ | ✓ | Default CT window/level, **normalized 0..1**. Seeds the store. |
 | `mriWL` | `{window,level}` optional? | ✓ | ✓ | W/L applied when MR is shown (`setDisplayMode`). |
 | `hasSegmentation` | boolean | ✓ | ✓ | Whether a seg volume exists. Read from the manifest (`App.tsx`, `ControlRail.tsx`) to gate segmentation UI; also mirrored into `DatasetEntry`. |
@@ -258,7 +258,7 @@ Dataset builders and their outputs. Full arg detail in each script's `--help`; c
 Tracked in full in [design.md §8](design.md#8-known-drift--alignment-worklist). Schema-level summary:
 
 1. **README `## How it works` asset/manifest example is stale** vs the real files (`ct_t*` naming, missing `mri`/`labelColors`/`meshes[]`/`storageWindowHU`/`mriWL`). This doc supersedes it.
-2. **Written-but-unread fields:** `storageWindowHU`, top-level `meshes` (always null).
+2. **Vestigial field:** top-level `meshes` is always `null` (the live mesh list is `timepoints[].meshes`). `storageWindowHU` is emitted-but-unrendered, now acknowledged in the TS type as provenance metadata (no longer a type drift).
 6. ~~Picker badges misclassify the ML case.~~ **RESOLVED 2026-07-09** — `build_index.cjs` now derives badges from canonical label ints (`label 2` = tumour, `3` = organ), aligned with the frontend's `label === 2` invariant. `index.json` regenerated.
 3. **Two mesh mechanisms:** legacy `tumorMesh`/`organMesh` (labels 2/1) vs `timepoints[].meshes[]` (preferred).
 4. **No runtime validation** — malformed manifests fail lazily in the browser.

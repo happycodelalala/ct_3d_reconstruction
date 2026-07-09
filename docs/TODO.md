@@ -25,9 +25,7 @@ Companion tracking: this list is the actionable form of [design.md §8](design.m
   - **Fix:** new builders emit only `meshes[]` + `labelColors` (the envelope path). Keep the legacy slots readable for old datasets, but don't produce them. `preprocess_hn_mri` still emits `tumorMesh` — move it to `meshes[]` when convenient.
   - **Refs:** `schema.md §2.1`, `src/components/Viewer3D.tsx:76-82`.
 
-- [ ] **Decide fate of dead manifest fields.** `storageWindowHU` (written by every builder, absent from the TS `Manifest` type, never read) and top-level `meshes` (always `null`).
-  - **Fix:** either drop them from the builders, or keep and explicitly document as reproducibility metadata. Pick one and reflect it in `schema.md`.
-  - **Refs:** `schema.md §2`, `scripts/preprocess_hn_mri.py:161,172`, `scripts/build_envelope_dataset.py:132,145`.
+- [x] **Decide fate of dead manifest fields. — DONE 2026-07-09.** `storageWindowHU` (emitted by every builder, was absent from the TS type) is genuine provenance → **added to the `Manifest` type** as optional metadata (`src/lib/dataset.ts`), resolving the type/data drift. Top-level `meshes` (always `null`) is a harmless vestige of the pre-per-timepoint schema → **kept and documented** rather than churn six builders for a null. Reflected in `schema.md §2/§10`, `design.md §8.3`.
 
 - [ ] **Unify the label-1 convention across builders.** Label 2 = tumour is universal, but label 1 = "body" in envelope datasets vs "kidney"/"lung"/organ in legacy builders.
   - **Fix:** migrate legacy builders to the envelope label scheme (1=body, 2=tumour, 3=organ, 4=bone) as they're consolidated; until then, all consumers must read `labels` and never assume label 1.
@@ -42,10 +40,10 @@ Companion tracking: this list is the actionable form of [design.md §8](design.m
 
 ## P2 — Documentation alignment
 
-- [ ] **Trim README `## How it works` / `### Unified manifest` to point at `schema.md`.** The README asset block documents stale names (`ct_t*.bin.gz`, `tumor_t*.json`, `organ_t*.json`) and a manifest example missing `mri`, `labelColors`, `timepoints[].meshes[]`, `storageWindowHU`, `mriWL`. `schema.md` is now the source of truth.
-  - **Refs:** `README.md` (`## How it works`), `schema.md §1–2`.
+- [x] **Trim README `## How it works` / `### Unified manifest` to point at `schema.md`. — DONE 2026-07-09.** Corrected the stale asset block (real filenames + canonical `1=body 2=tumour 3=organ 4=bone` labels; noted names are manifest-declared) and replaced the drifted full-manifest jsonc (an old NLST example missing `mri`/`labelColors`/`meshes[]`/`mriWL`) with an abridged current example that points at `docs/schema.md` as the full contract and `docs/design.md` for architecture.
+  - **Refs:** `README.md` (`## How it works`, `### Unified manifest`).
 
-- [ ] **Fix README `## Project layout` drift.** `App.tsx` is listed under `components/` but lives in `src/` root; `PatientPicker.tsx` is missing; the `scripts/` list omits `build_envelope_dataset.py`, `triage_pipeline.py`, `calibration_experiment.py`, and `geometry.py`.
+- [x] **Fix README `## Project layout` drift. — DONE 2026-07-09.** Moved `App.tsx`/`main.tsx` to `src/` root, added `PatientPicker.tsx`, refreshed the `scripts/` list (added `build_envelope_dataset.py`, `medsam2_seed_test.py`, `triage_pipeline.py`, `build_index.cjs`; grouped the legacy builders), and corrected the stale contributor instruction (there is **no `DATASETS` array** — datasets register via `npm run data:index` scanning manifests). Root cause: README predated the manifest-scanned index registry.
   - **Refs:** `README.md` (`## Project layout`).
 
 ---
@@ -62,6 +60,13 @@ Companion tracking: this list is the actionable form of [design.md §8](design.m
   - **Refs:** `scripts/geometry.py`, [design.md §6](design.md#6-coordinate-system--the-alignment-contract).
 
 ---
+
+## P1 — Bugs (self-review of this session's implementation)
+
+- [x] **Orientation audit reported canonicalized data as "raw". — FIXED 2026-07-09.** `geometry.py::_audit` read CT/MR via `load_ct_mr`, which this session made canonicalize-on-read — so the "raw orientations" line always printed `LPS` and the follow-up `canonicalize()` was a no-op. Fed a flipped/oblique acquisition, the audit would have hidden the reorientation, defeating its diagnostic purpose (invisible today only because all current data is already LPS).
+  - **Root cause:** canonicalization was added to `load_ct_mr` (correct for the pipeline) *after* the audit was written to read through it; the audit is the one caller that needs the *raw* orientation. Sweep confirmed the other three callers (`prepare_output_volumes`, `register_ct_mr` QA, `medsam2.load_inputs`) all want canonicalized, so this was the sole mismatch.
+  - **Resolution:** `load_ct_mr(case_dir, to_lps=True)` — the audit passes `to_lps=False` to get true raw (no file-discovery duplication). Verified on a synthetic flipped case: raw now reports `RPI`, then `canonicalize → LPS`; the real LPS case is unchanged.
+  - **Refs:** `scripts/register_ct_mr.py:42`, `scripts/geometry.py:142`.
 
 ## Done in this review (2026-07-09)
 

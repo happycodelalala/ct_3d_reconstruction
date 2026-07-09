@@ -10,6 +10,7 @@ export interface Manifest {
   dims: [number, number, number]; // X, Y, Z(=slice axis)
   worldExtent: [number, number, number]; // half-width per axis
   spacingMm: [number, number, number];
+  storageWindowHU?: { lo: number; hi: number }; // HU window used to pack the CT to uint8 (provenance; not rendered)
   defaultWL: { window: number; level: number };
   mriWL?: { window: number; level: number }; // default W/L when the MR is shown
   hasSegmentation: boolean;
