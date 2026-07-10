@@ -1,6 +1,7 @@
-// Loads preprocessed datasets (HaN-Seg CT+MRI envelopes) and renders real axial slices.
-// A dataset has one or more timepoints (longitudinal) and optional segmentation.
-// 2D slices and 3D meshes share the SAME normalized world space (see scripts/).
+// Loads preprocessed datasets (HaN-Seg CT+MRI envelopes): the fetch/validate path, the
+// core data types, and the normalized voxel↔world mapping. The 2D pixel/shading kernel
+// lives in render.ts, label→colour in color.ts. 2D slices and 3D meshes share the SAME
+// normalized world space (see scripts/).
 
 export interface Manifest {
   id: string;
@@ -57,84 +58,8 @@ export interface Timepoint {
   meshes?: { label: number; mesh: MeshData }[]; // one isosurface per seg label
 }
 
-// Per-label overlay colours: fallback palette (RGB 0..255) indexed by (label-1). Label 2 =
-// tumour stays amber, label 1 teal — so existing 2-label datasets look unchanged.
-export const LABEL_PALETTE: [number, number, number][] = [
-  [40, 130, 148],   // 1 teal
-  [255, 176, 84],   // 2 amber (tumour)
-  [170, 120, 210],  // 3 purple
-  [120, 200, 120],  // 4 green
-  [230, 120, 150],  // 5 pink
-];
-
-// Visible label -> RGB. Absent label = hidden. Built from the manifest + the store's
-// per-label visibility so the renderers stay data-driven (no hard-coded label values).
-export type LabelStyle = Record<number, [number, number, number]>;
-
-export const SEG_TINT = 0.55; // overlay tint strength (mix of greyscale toward the label colour)
-
-// One place to resolve a label's colour: the manifest's labelColors, else the palette.
-export function labelColor(m: Manifest | undefined, label: number): [number, number, number] {
-  return m?.labelColors?.[String(label)] ?? LABEL_PALETTE[(label - 1) % LABEL_PALETTE.length];
-}
-
-export function buildLabelStyle(m: Manifest | undefined, visible: Record<number, boolean>): LabelStyle {
-  const out: LabelStyle = {};
-  if (!m?.labels) return out;
-  for (const key of Object.keys(m.labels)) {
-    const lab = Number(key);
-    if (visible[lab] === false) continue; // undefined defaults to visible
-    out[lab] = labelColor(m, lab);
-  }
-  return out;
-}
-
-// Clamp v to [lo, hi] — the one clamp primitive (slice/timepoint indices, 0..1
-// fractions) instead of re-inlining Math.max(lo, Math.min(hi, …)) at each site.
-export function clamp(v: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, v));
-}
-// Clamp to the unit interval (crosshair positions, click coords, UV).
-export function clamp01(v: number): number {
-  return clamp(v, 0, 1);
-}
-
-// Blend a greyscale luminance toward a label colour by SEG_TINT (the seg overlay tint).
-export function mix(a: number, b: number, t: number): number {
-  return Math.round(a + (b - a) * t);
-}
-
-export function tintPixel(lum: number, c: [number, number, number]): [number, number, number] {
-  return [mix(lum, c[0], SEG_TINT), mix(lum, c[1], SEG_TINT), mix(lum, c[2], SEG_TINT)];
-}
-
-// Window a 0..1 source luminance to 0..255 by level/width. Shared by the axial renderer
-// and the MPR sampler so windowing is defined once.
-export function windowLum(v01: number, level: number, window: number): number {
-  const lo = level - window / 2;
-  const hi = level + window / 2;
-  return clamp(Math.round(((v01 - lo) / Math.max(1e-4, hi - lo)) * 255), 0, 255);
-}
-
-// Greyscale luminance + seg label -> RGBA, with the label tint and air transparency.
-// Shared by renderRealSlice (axial) and renderReformat (MPR).
-export function shade(lum: number, label: number, labelStyle: LabelStyle, transparentAir: boolean) {
-  let r = lum, g = lum, b = lum, a = 255;
-  if (lum <= 2 && transparentAir) a = 0;
-  const c = label ? labelStyle[label] : undefined;
-  if (c) { [r, g, b] = tintPixel(lum, c); a = 255; }
-  return [r, g, b, a] as const;
-}
-
 // Which volume the 2D/3D renderers draw from. "fusion" blends CT+MR.
 export type DisplayMode = "ct" | "mri" | "fusion";
-
-/** The mode a timepoint can actually render: the chosen mode, or "ct" when the
- *  timepoint has no MR ("mri"/"fusion" aren't drawable without it). One rule, shared
- *  by every 2D/3D view instead of re-inlining the CT fallback in each. */
-export function effectiveMode(mri: Uint8Array | undefined, mode: DisplayMode): DisplayMode {
-  return mri ? mode : "ct";
-}
 
 export interface RealDataset {
   manifest: Manifest;
@@ -257,48 +182,4 @@ export function voxelToWorld(v: number, axis: number, m: Manifest): number {
 
 export function sliceWorldZ(k: number, m: Manifest): number {
   return voxelToWorld(k, 2, m);
-}
-
-// Per-voxel source luminance (0..1) for the active display mode: CT, MR, or a
-// linear CT/MR blend (fusion). Shared by the axial renderer and the MPR sampler
-// so every view fuses identically.
-export function srcLum01(
-  ct: Uint8Array,
-  mri: Uint8Array | undefined,
-  vi: number,
-  mode: DisplayMode = "ct",
-  fusion = 0.5
-): number {
-  if (mode === "mri" && mri) return mri[vi] / 255;
-  if (mode === "fusion" && mri) return (ct[vi] / 255) * (1 - fusion) + (mri[vi] / 255) * fusion;
-  return ct[vi] / 255;
-}
-
-// Render one axial slice (constant Z = k) to ImageData, with optional contrast
-// re-windowing on the already-8bit volume(s) and a seg overlay (when seg present).
-export function renderRealSlice(
-  ct: Uint8Array,
-  seg: Uint8Array | undefined,
-  m: Manifest,
-  k: number,
-  opts: {
-    window: number; level: number; labelStyle: LabelStyle; transparentAir?: boolean;
-    mri?: Uint8Array; mode?: DisplayMode; fusion?: number;
-  }
-): ImageData {
-  const [X, Y] = m.dims;
-  const img = new ImageData(X, Y);
-  const data = img.data;
-
-  for (let oy = 0; oy < Y; oy++) {
-    const cy = Y - 1 - oy; // flip so +Y is up
-    for (let ox = 0; ox < X; ox++) {
-      const vi = ox + X * (oy + Y * k);
-      const lum = windowLum(srcLum01(ct, opts.mri, vi, opts.mode, opts.fusion), opts.level, opts.window);
-      const [r, g, b, a] = shade(lum, seg ? seg[vi] : 0, opts.labelStyle, !!opts.transparentAir);
-      const di = (cy * X + ox) * 4;
-      data[di] = r; data[di + 1] = g; data[di + 2] = b; data[di + 3] = a;
-    }
-  }
-  return img;
 }

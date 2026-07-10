@@ -32,7 +32,7 @@ Actual example (`public/data/hanseg_case_01_gt/`): `ct.bin.gz`, `mri.bin.gz`, `s
 
 ## 2. `manifest.json`
 
-One per dataset. The frontend type is `Manifest` in `src/lib/dataset.ts:5-32`.
+One per dataset. The frontend type is `Manifest` in `src/lib/dataset.ts`.
 
 | Field | Type | P | C | Notes |
 |---|---|:-:|:-:|---|
@@ -56,7 +56,7 @@ One per dataset. The frontend type is `Manifest` in `src/lib/dataset.ts:5-32`.
 
 ### 2.1 `timepoints[]` entry
 
-The manifest holds **filenames** (strings); the decoded runtime `Timepoint` (`dataset.ts:49-59`) holds the fetched bytes/meshes.
+The manifest holds **filenames** (strings); the decoded runtime `Timepoint` (`dataset.ts`) holds the fetched bytes/meshes.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -109,7 +109,7 @@ The manifest holds **filenames** (strings); the decoded runtime `Timepoint` (`da
 
 ## 3. `index.json` (dataset registry)
 
-Built by `scripts/build_index.cjs` (`npm run data:index`) by scanning every `manifest.json`. Frontend type: `DatasetIndex` / `DatasetEntry` (`dataset.ts:131-147`).
+Built by `scripts/build_index.cjs` (`npm run data:index`) by scanning every `manifest.json`. Frontend type: `DatasetIndex` / `DatasetEntry` (`dataset.ts`).
 
 ```json
 {
@@ -139,7 +139,7 @@ Built by `scripts/build_index.cjs` (`npm run data:index`) by scanning every `man
 | `count` | number | `datasets.length`. |
 | `datasets[]` | `DatasetEntry[]` | Rows below. |
 
-**`DatasetEntry`:** `id`, `base` (`/data/<id>`), `title`, `organ` (string\|null), `modality`, `source`, `timepoints` (count), `hasSegmentation` (bool), `hasTumor` (bool). **Badge derivation follows the canonical label integers** (`build_index.cjs:30-42`, aligned with the frontend's `label === 2` = tumour invariant): `hasTumor` if label `2` exists (or a legacy `tumorMesh`); `organ` = the canonical organ label `3`, else the first non-tumour, non-`body`/`bone` label (covers legacy datasets where label 1 = kidney/lung). Earlier a label-name regex was used; it misclassified tumours whose names lacked a keyword (e.g. `brainstem (MedSAM2)`) — fixed 2026-07-09.
+**`DatasetEntry`:** `id`, `base` (`/data/<id>`), `title`, `organ` (string\|null), `modality`, `source`, `timepoints` (count), `hasSegmentation` (bool), `hasTumor` (bool). **Badge derivation follows the canonical label integers** (`build_index.cjs`, aligned with the frontend's `label === 2` = tumour invariant): `hasTumor` if label `2` exists (or a legacy `tumorMesh`); `organ` = the canonical organ label `3`, else the first non-tumour, non-`body`/`bone` label (covers legacy datasets where label 1 = kidney/lung). Earlier a label-name regex was used; it misclassified tumours whose names lacked a keyword (e.g. `brainstem (MedSAM2)`) — fixed 2026-07-09.
 
 ---
 
@@ -154,7 +154,7 @@ Built by `scripts/build_index.cjs` (`npm run data:index`) by scanning every `man
 | Ravel order | numpy C-order from `(Z,Y,X)` → **X fastest**. |
 | **Index formula** | **`idx = x + X·(y + Y·z)`** where `X=dims[0]`, `Y=dims[1]`. |
 
-Same formula in the pipeline (`preprocess_hn_mri.to_zyx` docstring) and the frontend (`dataset.ts:249`, `mpr.ts:30`). CT and MR volumes share the grid, so a single `vi` indexes both (enables fusion). Client-side gzip is only inflated when the bytes still carry the `1f 8b` magic (some hosts pre-inflate via `Content-Encoding`) — `dataset.ts:159-170`.
+Same formula in the pipeline (`grid.to_zyx` docstring) and the frontend (`render.ts` `renderRealSlice`, `mpr.ts` `realSampler`). CT and MR volumes share the grid, so a single `vi` indexes both (enables fusion). Client-side gzip is only inflated when the bytes still carry the `1f 8b` magic (some hosts pre-inflate via `Content-Encoding`) — `dataset.ts` `fetchGzBin`.
 
 - **CT** (`ct.bin.gz`): CT HU linearly windowed by `storageWindowHU` to 0..255.
 - **MR** (`mri.bin.gz`): robust-windowed (2nd–99.5th percentile of non-zero voxels) to 0..255.
@@ -190,14 +190,14 @@ No color and no normals are stored — **normals are computed client-side** (`co
 
 - **Label 2 = tumour is universal** across every builder.
 - **Label 1 = body** in envelope datasets (the current convention). The only other builder, `preprocess_hn.py`, is single-tumour (label 2 only). Still: **read `labels`, don't hard-code — the label→name map is authoritative.**
-- Color resolution (`labelColor`, `dataset.ts:78`): `manifest.labelColors[String(label)] ?? LABEL_PALETTE[(label-1) % LABEL_PALETTE.length]` (palette length is currently 5). `LABEL_PALETTE` (`dataset.ts:63-69`): `[40,130,148]`, `[255,176,84]`, `[170,120,210]`, `[120,200,120]`, `[230,120,150]`.
-- Rendering: label 2 → solid glowing material; all other labels → translucent shells (`Viewer3D.tsx:86-105`). Seg overlay tint strength `SEG_TINT = 0.55`.
+- Color resolution (`labelColor`, `color.ts`): `manifest.labelColors[String(label)] ?? LABEL_PALETTE[(label-1) % LABEL_PALETTE.length]` (palette length is currently 5). `LABEL_PALETTE` (`color.ts`): `[40,130,148]`, `[255,176,84]`, `[170,120,210]`, `[120,200,120]`, `[230,120,150]`.
+- Rendering: label 2 → solid glowing material; all other labels → translucent shells (`Viewer3D.tsx`). Seg overlay tint strength `SEG_TINT = 0.55`.
 
 ---
 
 ## 7. `metrics.json`
 
-Written by `preprocess_hn_mri` (`"metrics": "metrics.json"`); envelope builder writes none (`"metrics": null`). Frontend type `RealMetrics` (`dataset.ts:39-47`).
+Written by `preprocess_hn_mri` (`"metrics": "metrics.json"`); envelope builder writes none (`"metrics": null`). Frontend type `RealMetrics` (`dataset.ts`).
 
 | Field | Type | Notes |
 |---|---|---|
@@ -217,7 +217,7 @@ The single most load-bearing contract; enforced by `scripts/geometry.py`. See [d
 
 | Concept | Rule |
 |---|---|
-| Reference grid | One per dataset, CT-derived: `256 × 256 × min(Z, 220)` (`OUT_XY=256`, `OUT_Z_CAP=220`). CT, MR, all masks resampled onto it. |
+| Reference grid | One per dataset, CT-derived: `256 × 256 × min(Z, 220)` (`grid.OUT_XY=256`, `grid.OUT_Z_CAP=220`). CT, MR, all masks resampled onto it. |
 | Orientation | All inputs canonicalized to **LPS** at ingest. Grid must be axis-aligned; oblique is rejected. |
 | World axes | X = L/R, Y = A/P, Z = S/I (slice / cranio-caudal). |
 | Array order | `(Z, Y, X)` in numpy; raveled to `idx = x + X·(y + Y·z)`. |
@@ -248,7 +248,7 @@ Dataset builders and their outputs. Full arg detail in each script's `--help`; c
 
 **Legacy builder:** `preprocess_hn.py` (DICOM + RTSTRUCT single-slice → `hn_<PID>/`, tumour = label 2, emits `tumorMesh`). It shares the pure asset helpers via `asset_common` (`mesh_from_mask`/`window_u8`/`write_gz`); only its numpy index-based grid resampling is bespoke (it works on numpy arrays from `rt_utils`, not SimpleITK images). The KiTS/NLST builders were removed 2026-07-09 (data no longer needed).
 
-**seg volume `metrics.json` note:** `bboxMm` is ordered `[dx, dy, dz]` while arrays are `(z,y,x)` — the builder reorders explicitly (`preprocess_hn_mri.py:127`).
+**seg volume `metrics.json` note:** `bboxMm` is ordered `[dx, dy, dz]` while arrays are `(z,y,x)` — the builder reorders explicitly (`preprocess_hn_mri.py`, the `bbmm` computation).
 
 ---
 

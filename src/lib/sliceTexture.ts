@@ -1,5 +1,7 @@
 import * as THREE from "three";
-import { renderRealSlice, type DisplayMode, type LabelStyle, type Manifest } from "./dataset";
+import { renderRealSlice } from "./render";
+import type { LabelStyle } from "./color";
+import type { DisplayMode, Manifest } from "./dataset";
 
 export function imageToTexture(img: ImageData, flipY = true): THREE.CanvasTexture {
   const canvas = document.createElement("canvas");

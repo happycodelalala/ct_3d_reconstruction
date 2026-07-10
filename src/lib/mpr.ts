@@ -2,7 +2,10 @@
 // oblique projections, plus a maximum-intensity projection (MIP), via a common
 // world-space sampler over the loaded volume.
 
-import { srcLum01, mix, windowLum, shade, clamp01, type DisplayMode, type LabelStyle, type Manifest } from "./dataset";
+import { srcLum01, mix, windowLum, shade } from "./render";
+import type { LabelStyle } from "./color";
+import { clamp01 } from "./math";
+import type { DisplayMode, Manifest } from "./dataset";
 
 export type PlaneKind = "coronal" | "sagittal" | "oblique";
 

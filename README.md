@@ -281,8 +281,12 @@ src/
   main.tsx            React entry point
   store.ts            zustand state (dataset, timepoint, slice, crosshair, toggles, W/L)
   lib/
-    dataset.ts        dataset registry + loader; all TS types; normalized coordinate mapping;
-                      real axial-slice rendering + windowing + label tinting
+    dataset.ts        dataset registry + loader (fetch/validate); all TS types;
+                      normalized coordinate mapping
+    math.ts           dependency-free numeric primitives (clamp / clamp01)
+    render.ts         2D pixel/shading kernel: CT/MR/fusion luminance, window/level,
+                      seg tinting, air transparency, axial rasteriser (shared w/ MPR)
+    color.ts          label -> RGB resolution (palette + manifest labelColors)
     mpr.ts            world-space sampler + reslice (coronal/sagittal/oblique) + MIP
     sliceTexture.ts   wraps a slice/reformat as a Three.js texture
   components/
@@ -295,7 +299,9 @@ src/
     Timeline.tsx      timepoint scrubber + playback
 scripts/              data pipeline — module map & dedup graph in docs/design.md §3
   register_ct_mr.py         HaN-Seg: MR->CT registration (SimpleITK MI) + .tfm cache + QA overlays
-  preprocess_hn_mri.py      HaN-Seg: CT+MR -> shared-grid assets; the shared grid/window/mesh helpers
+  grid.py                   shared SimpleITK output-grid + registered-resampling core (both builders)
+  asset_common.py           pure numpy/skimage helpers: mesh_from_mask / window_u8 / write_gz / largest_cc
+  preprocess_hn_mri.py      HaN-Seg: CT+MR -> single-tumour dataset (OAR stand-in), on the grid core
   build_envelope_dataset.py multi-label envelope builder (body/bone/organ/tumour + per-label meshes)
   medsam2_seed_test.py      MedSAM2 promptable single-seed -> 3D tumour engine + seed test
   triage_pipeline.py        recall-safe tumour-envelope triage (ensemble -> consensus -> route)

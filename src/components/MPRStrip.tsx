@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useStore, sliceFraction } from "../store";
 import { renderReformat, renderMIP, realSampler, type PlaneKind } from "../lib/mpr";
-import { buildLabelStyle, effectiveMode, clamp01, type Manifest } from "../lib/dataset";
+import { buildLabelStyle } from "../lib/color";
+import { effectiveMode } from "../lib/render";
+import { clamp01 } from "../lib/math";
+import type { Manifest } from "../lib/dataset";
 
 const PLANES: { kind: PlaneKind; label: string }[] = [
   { kind: "coronal", label: "CORONAL" },

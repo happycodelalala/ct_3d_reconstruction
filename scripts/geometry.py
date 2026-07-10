@@ -1,7 +1,7 @@
 """Orientation / coordinate-frame guardrails shared across the imaging pipeline.
 
-Every CT, MR and annotation is resampled onto ONE reference grid (preprocess_hn_mri.
-output_grid) whose direction cosines the front-end then IGNORES: it renders volumes,
+Every CT, MR and annotation is resampled onto ONE reference grid (grid.output_grid)
+whose direction cosines the front-end then IGNORES: it renders volumes,
 meshes and MPR planes as a plain axis-aligned index cube (idx = x + X*(y + Y*z), with
 world axes assumed X=L/R, Y=A/P, Z=S/I). That is fast and correct — but ONLY while the
 reference grid really is an axis-aligned frame. A flipped, axis-permuted or oblique

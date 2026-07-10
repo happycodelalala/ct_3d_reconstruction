@@ -1,5 +1,6 @@
 import { useStore } from "../store";
-import { labelColor, type DisplayMode } from "../lib/dataset";
+import { labelColor } from "../lib/color";
+import type { DisplayMode } from "../lib/dataset";
 
 const MODES: { m: DisplayMode; label: string }[] = [
   { m: "ct", label: "CT" },

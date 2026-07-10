@@ -9,7 +9,8 @@ independently-toggleable layers (2D overlays + 3D shells).
   tumour = a tumour-envelope NRRD (e.g. scripts/triage_pipeline.py's recall-safe envelope)
   organ  = union of all OAR masks shipped with the case
 
-Reuses the grid / windowing / meshing helpers from preprocess_hn_mri (no duplication).
+Reuses the shared grid/registration core (grid.py) and pure asset helpers
+(asset_common.py) — no per-builder duplication.
 
     .venv/bin/python scripts/build_envelope_dataset.py \
         --case-dir hanseg_data/HaN-Seg/set_1/case_01 \
@@ -25,7 +26,7 @@ import SimpleITK as sitk
 from scipy.ndimage import binary_fill_holes
 
 from asset_common import mesh_from_mask, write_gz, largest_cc  # shared pure asset helpers
-from preprocess_hn_mri import prepare_output_volumes, to_zyx, OUT_XY, CT_HU_LO, CT_HU_HI
+from grid import prepare_output_volumes, to_zyx, OUT_XY, CT_HU_LO, CT_HU_HI  # shared grid core
 from geometry import warn_if_no_overlap
 
 # fixed layer colours (RGB 0..255); the tumour layer's colour comes from --tumour-color

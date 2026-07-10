@@ -35,7 +35,7 @@ ONCOVOL turns paired **CT + MRI** studies into an interactive 3D reconstruction 
 
 1. **Ingest & canonicalize.** Read CT/MR/masks (SimpleITK). Every image is reoriented to **LPS** on load (`geometry.canonicalize`) so the rest of the pipeline can assume an axis-aligned frame. Oblique volumes are rejected loudly. → [§6](#6-coordinate-system--the-alignment-contract)
 2. **Register.** MR → CT with Mattes mutual information (rigid → affine), cached as a `.tfm` (`register_ct_mr`). One transform per case, reused everywhere.
-3. **Resample to a shared grid.** CT, registered MR, and every mask are resampled onto ONE reference grid derived from the CT (`preprocess_hn_mri.output_grid`, 256×256×min(Z,220)). This is what makes slices, overlays, and meshes co-register.
+3. **Resample to a shared grid.** CT, registered MR, and every mask are resampled onto ONE reference grid derived from the CT (`grid.output_grid`, 256×256×min(Z,220)). This is what makes slices, overlays, and meshes co-register.
 4. **Derive layers.** Body/bone from CT thresholds; organ from OAR masks (expert) or TotalSegmentator (ML); tumour from an expert mask, MedSAM2, or the recall-safe triage envelope.
 5. **Window & serialize.** CT/MR windowed to uint8, gzipped; masks painted into one multi-label `seg` volume; each layer meshed (marching cubes) into normalized world space.
 6. **Manifest + index.** Write `manifest.json` per dataset; `build_index.cjs` scans all manifests into `public/data/index.json` for the picker.
@@ -52,7 +52,8 @@ ONCOVOL turns paired **CT + MRI** studies into an interactive 3D reconstruction 
 | `asset_common.py` | Dependency-light shared helpers — **pure numpy + scikit-image, no SimpleITK** — so every builder (incl. the numpy legacy one) and the MedSAM2 preprocessing share them. `window_u8` is the single window-to-uint8 primitive (`window_ct_u8`/`window_mr_u8`/`mr_to_uint8`/`ct_to_uint8` all delegate to it). | `mesh_from_mask`, `window_u8`, `write_gz` |
 | `geometry.py` | Orientation guardrails & auto-alignment (LPS canonicalization, axis-aligned assertion, physical-overlap checks) + a `--case-dir` audit CLI. | `canonicalize`, `assert_axis_aligned`, `masks_overlap_grid`, `warn_if_no_overlap` |
 | `register_ct_mr.py` | MR→CT registration (MI, rigid+affine), the `.tfm` cache, QA overlays, and `mr_in_ct.nrrd`. | `load_ct_mr`, `register`, `register_cached`, `transform_cache_path` |
-| `preprocess_hn_mri.py` | The SimpleITK output grid + cached-registration setup + the single-tumour CT+MR dataset builder (pure asset helpers now live in `asset_common`). | `output_grid`, `to_zyx`, `prepare_output_volumes`, `window_ct_u8`/`window_mr_u8` |
+| `grid.py` | The shared SimpleITK **output-grid + registered-resampling core** — one reference grid from the CT, both volumes resampled into it. Imported by BOTH CT+MR builders, so neither reaches into the other for it. | `output_grid`, `to_zyx`, `prepare_output_volumes`, `window_ct_u8`/`window_mr_u8`, `OUT_XY`/`CT_HU_*` |
+| `preprocess_hn_mri.py` | The single-tumour CT+MR dataset builder (one OAR as tumour stand-in). Builds on the shared `grid` core + `asset_common` helpers — no grid/registration code of its own. | `build` (CLI) |
 | `build_envelope_dataset.py` | The multi-label **envelope** dataset builder (body/bone/organ/tumour, per-label colors + meshes). | (CLI) |
 | `medsam2_seed_test.py` | Promptable single-seed→3D MedSAM2 engine + seed-test harness. | `prepare_case`, `segment`, `dice` |
 | `triage_pipeline.py` | Recall-safe tumour-envelope triage (ensemble → consensus → dilate → prune → route). | `recall_safe_envelopes`, `recall_precision` |
@@ -65,24 +66,24 @@ ONCOVOL turns paired **CT + MRI** studies into an interactive 3D reconstruction 
 Pure asset helpers live in `asset_common` (no SimpleITK), so **every** builder shares them — including the numpy-based legacy `preprocess_hn.py`. The SimpleITK grid + registration chain layers above.
 
 ```
-asset_common.py ─(mesh_from_mask, window_u8, write_gz) ── shared by ALL builders + MedSAM2 prep
-geometry.py ─────(canonicalize, asserts, overlap) ───────┐
-     ▲                                                    │
-register_ct_mr.py ──(load_ct_mr, register_cached)         │
-     ▲                                                    │
-preprocess_hn_mri.py ──(output_grid, prepare_output_volumes) ──┤
-     ▲                        ▲                           │
-build_envelope_dataset.py     │                           │
-                              │                           │
-medsam2_seed_test.py ──(prepare_case, segment, dice) ─────┘
+asset_common.py ─(mesh_from_mask, window_u8, write_gz, largest_cc) ── shared by ALL builders + MedSAM2 prep
+geometry.py ─────(canonicalize, asserts, overlap) ──┐
+register_ct_mr.py ──(load_ct_mr, register_cached) ──┤
+     ▲            ▲                                  │  (SimpleITK grid + registration core)
+grid.py ──(output_grid, to_zyx, prepare_output_volumes, window_ct/mr_u8, OUT_XY, CT_HU_*)
+     ▲                          ▲
+     │                          │   ← BOTH builders import the core from grid.py, not each other
+preprocess_hn_mri.py     build_envelope_dataset.py
+
+medsam2_seed_test.py ──(prepare_case, segment, dice) — canonicalize/register/window via the layers above
      ▲
 triage_pipeline.py
 
-preprocess_hn.py (legacy, numpy) — imports asset_common; only its numpy index-based
-grid resampling is its own (it can't use the SimpleITK output_grid).
+preprocess_hn.py (legacy, numpy) — imports asset_common only; its numpy index-based grid
+resampling is bespoke (it can't use the SimpleITK grid.output_grid).
 ```
 
-**Rule of thumb for new imaging code:** enter through `load_ct_mr` (gets you canonicalization + cached registration for free) and build on `preprocess_hn_mri`'s `prepare_output_volumes` / `mesh_from_mask`. Do not re-implement the grid, windowing, meshing, or gzip — that is exactly the duplication this doc exists to prevent.
+**Rule of thumb for new imaging code:** enter through `load_ct_mr` (gets you canonicalization + cached registration for free) and build on `grid`'s `prepare_output_volumes` + `asset_common`'s `mesh_from_mask`. Do not re-implement the grid, windowing, meshing, or gzip — that is exactly the duplication this doc exists to prevent.
 
 ### 3.3 Two builder families
 
@@ -97,8 +98,11 @@ grid resampling is its own (it can't use the SimpleITK output_grid).
 
 | File | Owns |
 |---|---|
-| `src/lib/dataset.ts` | The dataset registry + loader, all TS types (`Manifest`, `Timepoint`, …), the normalized voxel↔world mapping, slice rendering + windowing + seg tinting, the label→color resolution. |
-| `src/lib/mpr.ts` | World-space sampler; coronal/sagittal/oblique reformatting; coronal MIP. Defines the anatomical plane axes. |
+| `src/lib/dataset.ts` | The dataset registry + loader (fetch/validate), all TS types (`Manifest`, `Timepoint`, …), and the normalized voxel↔world mapping. |
+| `src/lib/math.ts` | Dependency-free numeric primitives (`clamp`, `clamp01`) — the leaf every layer imports so the render/colour kernels don't reach into the loader for a clamp. |
+| `src/lib/render.ts` | The 2D pixel/shading kernel: CT/MR/fusion luminance (`srcLum01`), window/level (`windowLum`), seg tinting (`shade`/`tintPixel`), air transparency, the axial rasteriser (`renderRealSlice`), and `effectiveMode`. Shared by CTPanel + the MPR sampler so windowing/fusion are defined once. |
+| `src/lib/color.ts` | Label→RGB resolution: `LABEL_PALETTE`, `labelColor`, `buildLabelStyle` — the single data-driven theming source. |
+| `src/lib/mpr.ts` | World-space sampler; coronal/sagittal/oblique reformatting; coronal MIP. Defines the anatomical plane axes. Draws pixels via the `render.ts` kernel. |
 | `src/lib/sliceTexture.ts` | Wraps an `ImageData` slice/reformat as a Three.js texture. |
 | `src/store.ts` | zustand app state (dataset, timepoint, slice, crosshair, W/L, `labelVisible`, display mode) + actions. Seeds per-label visibility and W/L from the manifest on load. |
 | `src/components/PatientPicker.tsx` | Dataset/patient switcher (reads `index.json`). |
@@ -110,7 +114,7 @@ grid resampling is its own (it can't use the SimpleITK output_grid).
 
 ### 4.2 How label → color → mesh works (single source)
 
-Color is driven **entirely by the seg label integer**, never stored in the mesh JSON. `labelColor(manifest, label)` resolves `manifest.labelColors[label]` if present, else falls back to `LABEL_PALETTE[(label-1) % 5]`. `buildLabelStyle` filters that by `labelVisible`. `Viewer3D` maps each mesh's label through the same resolver and picks a material (label 2 = solid glowing tumour; others = translucent shells). This means: **to restyle a layer, change `labelColors` in the manifest — nothing in the frontend.** → [schema.md §6](schema.md#6-labels--colors).
+Color is driven **entirely by the seg label integer**, never stored in the mesh JSON. `labelColor(manifest, label)` (`color.ts`) resolves `manifest.labelColors[label]` if present, else falls back to `LABEL_PALETTE[(label-1) % 5]`. `buildLabelStyle` filters that by `labelVisible`. `Viewer3D` maps each mesh's label through the same resolver and picks a material (label 2 = solid glowing tumour; others = translucent shells). This means: **to restyle a layer, change `labelColors` in the manifest — nothing in the frontend.** → [schema.md §6](schema.md#6-labels--colors).
 
 ---
 

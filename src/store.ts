@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { loadDataset as fetchDataset, loadIndex as fetchIndex, clamp, type DatasetEntry, type DisplayMode, type RealDataset } from "./lib/dataset";
+import { loadDataset as fetchDataset, loadIndex as fetchIndex, type DatasetEntry, type DisplayMode, type RealDataset } from "./lib/dataset";
+import { clamp } from "./lib/math";
 
 /** Normalized slice position (crosshair z) in [0,1]. Guards the single-slice case
  *  (sliceMax = dims[2]-1 = 0) so it can't produce 0/0 = NaN. Shared by every view

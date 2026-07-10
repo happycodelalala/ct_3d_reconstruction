@@ -1,6 +1,9 @@
 import { useEffect, useRef } from "react";
 import { useStore } from "../store";
-import { buildLabelStyle, renderRealSlice, sliceWorldZ, effectiveMode, clamp01 } from "../lib/dataset";
+import { buildLabelStyle } from "../lib/color";
+import { renderRealSlice, effectiveMode } from "../lib/render";
+import { sliceWorldZ } from "../lib/dataset";
+import { clamp01 } from "../lib/math";
 
 const SIZE = 360;
 

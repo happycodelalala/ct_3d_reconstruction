@@ -4,7 +4,9 @@ import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { useStore, sliceFraction } from "../store";
 import { makeRealSliceTexture, imageToTexture } from "../lib/sliceTexture";
-import { buildLabelStyle, sliceWorldZ, effectiveMode, type MeshData } from "../lib/dataset";
+import { buildLabelStyle } from "../lib/color";
+import { effectiveMode } from "../lib/render";
+import { sliceWorldZ, type MeshData } from "../lib/dataset";
 import { renderReformat, realSampler, type PlaneBasis, type PlaneKind } from "../lib/mpr";
 
 // Authored in normalized coordinates, then this group rotates the cranio-caudal
