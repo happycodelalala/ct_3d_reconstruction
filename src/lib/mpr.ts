@@ -81,6 +81,12 @@ export interface ReformatResult {
   basis: PlaneBasis;
 }
 
+// Size a canvas to a `base`-pixel box preserving the aspect ratio (w/h). Shared by the
+// reformat and MIP renderers so the sizing rule lives in one place.
+function fitBox(aspect: number, base: number): [number, number] {
+  return aspect >= 1 ? [base, Math.round(base / aspect)] : [Math.round(base * aspect), base];
+}
+
 export function renderReformat(
   kind: PlaneKind,
   sampler: Sampler,
@@ -92,8 +98,7 @@ export function renderReformat(
   const { C, U, uExt, V, vExt, cu, cv } = basis;
   const base = opts.base ?? 240;
   const aspect = uExt / vExt;
-  const W = aspect >= 1 ? base : Math.round(base * aspect);
-  const H = aspect >= 1 ? Math.round(base / aspect) : base;
+  const [W, H] = fitBox(aspect, base);
 
   const img = new ImageData(W, H);
   const d = img.data;
@@ -127,8 +132,7 @@ export function renderMIP(
   const base = opts.base ?? 240;
   const steps = opts.steps ?? 110;
   const aspect = ex / ez;
-  const W = aspect >= 1 ? base : Math.round(base * aspect);
-  const H = aspect >= 1 ? Math.round(base / aspect) : base;
+  const [W, H] = fitBox(aspect, base);
 
   const img = new ImageData(W, H);
   const d = img.data;

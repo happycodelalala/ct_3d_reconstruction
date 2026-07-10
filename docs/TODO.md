@@ -89,6 +89,13 @@ Companion tracking: this list is the actionable form of [design.md §8](design.m
 - [x] **`CutPlane` rebuilt its slice texture even when hidden. — FIXED.** `Viewer3D.tsx` `CutPlane` gated `showCutPlane` only on the render (`return null`), not on its `useMemo` — so scrubbing/windowing/timepoint/fusion changes ran `makeRealSliceTexture` (full slice render + GPU `CanvasTexture` upload) and discarded it whenever the cut plane was toggled off. **Root cause:** the visibility flag gated output, not the resource build. Its siblings do it right — `LayerStack` checks `showLayers` inside the memo, `MPRBox` gates by not mounting `MPRQuad` (so `renderReformat` never runs). Fixed by gating the memo on `showCutPlane` too (added to the condition + deps). Not a leak (memoized+disposed), a wasted-work/inconsistency fix. `tsc` + `vite build` green.
 - [x] **Duplication: the "effective display mode" fallback. — FIXED.** `mri ? displayModality : "ct"` (use the chosen modality, fall back to CT when a timepoint has no MR) was copy-pasted across **6 sites in 3 files** (`Viewer3D` ×3, `MPRStrip` ×2, `CTPanel`). Extracted `dataset.ts::effectiveMode(mri, mode)` — one rule, same class as `sliceFraction`/`window_u8`. Behavior-preserving; full build green.
 
+## MPR / reslicing feature review (2026-07-09)
+
+Deep read of `mpr.ts` + `MPRStrip.tsx`. **No bugs** — verified the click→crosshair round-trip (coronal `crossUV.x` reduces exactly to `crossX`, vertical to `1 − slice/sliceMax`; the click handlers invert it consistently), the wheel/oblique-modulo wrap, and the MIP overlay. Two genuine duplications fixed:
+
+- [x] **`mpr.ts`: aspect→canvas-size math duplicated** in `renderReformat` + `renderMIP` (identical 3 lines) → extracted `fitBox(aspect, base)`.
+- [x] **`MPRStrip.tsx`: the tile shell duplicated** — `ProjectionTile` and `MIPTile` each re-implemented the canvas-write `useEffect`, the crosshair-overlay JSX (3 divs), the `proj-tile`/`proj-stage` structure, and the click fx/fy math. **Root cause:** no shared projection-tile component. Extracted `ProjCanvas` (takes `img`/`aspect`/`cu`/`cv`/`label`/`depth` + `onPick(fx,fy)`/`onWheel(deltaY)`); the two tiles are now thin wrappers differing only in their `useMemo` and handlers. 169→149 lines; `putImageData` and the overlay now single-source. `tsc` + `vite build` green (visual/interactive check would need the browser e2e).
+
 ## Done in this review (2026-07-09)
 
 Doc inaccuracies found by adversarial verification against the code and already corrected:
