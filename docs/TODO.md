@@ -135,6 +135,12 @@ Deep read of `build_envelope_dataset.py`. **Correct** — paint precedence (list
 
 - [x] **`mesh_from_mask` crashed on an empty mask; `build_envelope` didn't guard it. — FIXED.** `marching_cubes(level=0.5)` raises "level must be within data range" on an all-empty volume. `preprocess_hn_mri`/`preprocess_hn` guard `mask.sum()==0` *before* meshing, but `build_envelope` meshes every layer with no check — so a misaligned/empty organ or tumour layer (which `warn_if_no_overlap` only *warns* about) would crash with a cryptic skimage error. **Root cause:** the empty case was left to each caller instead of the shared helper. Guarded it in `asset_common.mesh_from_mask` (empty mask → empty mesh) — all callers now safe; `preprocess_hn_mri`/`hn` still `raise` first on empty (unchanged). Verified: empty→empty mesh no crash, non-empty envelope rebuild byte-identical; frontend renders an empty mesh as nothing.
 
+## geometry.py self-review (2026-07-09)
+
+Adversarial fresh pass over the guardrails I wrote this session. **Logic correct** — stress-tested `is_axis_aligned` against oblique angles (30°/60° pass the permutation structure but fail the `|D[big]−1|<tol` magnitude check; 45° fails `big.sum()==3`; 90° correctly passes as a permutation), verified the `_occupied_bounds` `(z,y,x)→(x,y,z)` reversal + AABB-overlap `-tol` (touching counts as overlap), and that `_audit` reads raw (`to_lps=False`) and compares physical bboxes (canonicalization-invariant). Guardrails work: the audit passes on case_01.
+
+- [x] **Dead code: `assert_same_frame`. — REMOVED.** I wrote it speculatively; no caller anywhere (only its own def + docstring + the design.md export list). Removed the function, its docstring line, and the stale `design.md` reference (YAGNI). Compile + imports + audit green.
+
 ## Done in this review (2026-07-09)
 
 Doc inaccuracies found by adversarial verification against the code and already corrected:

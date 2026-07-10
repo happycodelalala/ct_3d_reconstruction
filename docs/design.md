@@ -50,7 +50,7 @@ ONCOVOL turns paired **CT + MRI** studies into an interactive 3D reconstruction 
 | Module | Owns | Key exports |
 |---|---|---|
 | `asset_common.py` | Dependency-light shared helpers — **pure numpy + scikit-image, no SimpleITK** — so every builder (incl. the numpy legacy one) and the MedSAM2 preprocessing share them. `window_u8` is the single window-to-uint8 primitive (`window_ct_u8`/`window_mr_u8`/`mr_to_uint8`/`ct_to_uint8` all delegate to it). | `mesh_from_mask`, `window_u8`, `write_gz` |
-| `geometry.py` | Orientation guardrails & auto-alignment (LPS canonicalization, axis-aligned assertion, physical-overlap checks) + a `--case-dir` audit CLI. | `canonicalize`, `assert_axis_aligned`, `assert_same_frame`, `masks_overlap_grid`, `warn_if_no_overlap` |
+| `geometry.py` | Orientation guardrails & auto-alignment (LPS canonicalization, axis-aligned assertion, physical-overlap checks) + a `--case-dir` audit CLI. | `canonicalize`, `assert_axis_aligned`, `masks_overlap_grid`, `warn_if_no_overlap` |
 | `register_ct_mr.py` | MR→CT registration (MI, rigid+affine), the `.tfm` cache, QA overlays, and `mr_in_ct.nrrd`. | `load_ct_mr`, `register`, `register_cached`, `transform_cache_path` |
 | `preprocess_hn_mri.py` | The SimpleITK output grid + cached-registration setup + the single-tumour CT+MR dataset builder (pure asset helpers now live in `asset_common`). | `output_grid`, `to_zyx`, `prepare_output_volumes`, `window_ct_u8`/`window_mr_u8` |
 | `build_envelope_dataset.py` | The multi-label **envelope** dataset builder (body/bone/organ/tumour, per-label colors + meshes). | (CLI) |

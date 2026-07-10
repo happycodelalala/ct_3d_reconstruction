@@ -16,7 +16,6 @@ These helpers close that gap at the point images enter the pipeline:
                          points are untouched, so cached registrations stay valid.
   * assert_axis_aligned() refuse to proceed on a truly oblique volume (which no reorient
                          can fix without resampling), with an actionable message.
-  * assert_same_frame()  two images must share a physical frame (size/spacing/origin/dir).
   * warn_if_no_overlap() flag an annotation that lands (near-)empty on the grid after
                          resampling — the classic "the mask doesn't line up" symptom of a
                          frame mismatch, which a silent all-zero resample would hide.
@@ -72,14 +71,6 @@ def canonicalize(img, name="image"):
     (it does NOT resample), so an oblique volume stays oblique and is rejected here."""
     out = sitk.DICOMOrient(img, CANON)
     return assert_axis_aligned(out, name)
-
-
-def assert_same_frame(a, b, na="a", nb="b", tol=1e-3):
-    """Two images must occupy the same voxel lattice (size/spacing/origin/direction)."""
-    for attr in ("GetSize", "GetSpacing", "GetOrigin", "GetDirection"):
-        va, vb = getattr(a, attr)(), getattr(b, attr)()
-        if not np.allclose(va, vb, atol=tol):
-            raise ValueError(f"{na} and {nb} disagree on {attr[3:].lower()}: {va} vs {vb}")
 
 
 def _extent_bounds(img):
