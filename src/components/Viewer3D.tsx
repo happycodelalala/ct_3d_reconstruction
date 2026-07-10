@@ -4,7 +4,7 @@ import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { useStore, sliceFraction } from "../store";
 import { makeRealSliceTexture, imageToTexture } from "../lib/sliceTexture";
-import { buildLabelStyle, sliceWorldZ, type MeshData } from "../lib/dataset";
+import { buildLabelStyle, sliceWorldZ, effectiveMode, type MeshData } from "../lib/dataset";
 import { renderReformat, realSampler, type PlaneBasis, type PlaneKind } from "../lib/mpr";
 
 // Authored in normalized coordinates, then this group rotates the cranio-caudal
@@ -114,11 +114,14 @@ function CutPlane() {
   const tp = useTP();
   const { slice, window, level, showCutPlane, displayModality, fusionAlpha } = useStore();
   const labelVisible = useStore((s) => s.labelVisible);
-  const mode = tp?.mri ? displayModality : "ct";
+  const mode = effectiveMode(tp?.mri, displayModality);
   const labelStyle = buildLabelStyle(tp?.manifest, labelVisible);
+  // Gate the (expensive) slice-texture build on showCutPlane too — not just the render
+  // below — so scrubbing/windowing while the cut plane is hidden doesn't rebuild+upload a
+  // texture that's immediately discarded. Mirrors LayerStack, which gates on showLayers.
   const tex = useDisposable(useMemo(
-    () => (tp ? makeRealSliceTexture(tp.ct, tp.seg, tp.manifest, slice, { window, level, labelStyle, mri: tp.mri, mode, fusion: fusionAlpha }) : null),
-    [tp, slice, window, level, labelVisible, mode, fusionAlpha]
+    () => (tp && showCutPlane ? makeRealSliceTexture(tp.ct, tp.seg, tp.manifest, slice, { window, level, labelStyle, mri: tp.mri, mode, fusion: fusionAlpha }) : null),
+    [tp, showCutPlane, slice, window, level, labelVisible, mode, fusionAlpha]
   ));
   if (!tp || !showCutPlane || !tex) return null;
   const m = tp.manifest;
@@ -129,7 +132,7 @@ function LayerStack() {
   const tp = useTP();
   const { showLayers, window, level, displayModality, fusionAlpha } = useStore();
   const labelVisible = useStore((s) => s.labelVisible);
-  const mode = tp?.mri ? displayModality : "ct";
+  const mode = effectiveMode(tp?.mri, displayModality);
   const labelStyle = buildLabelStyle(tp?.manifest, labelVisible);
   const layers = useMemo(() => {
     if (!tp || !showLayers) return [];
@@ -165,7 +168,7 @@ function buildQuad(b: PlaneBasis): THREE.BufferGeometry {
 function MPRQuad({ kind, color, tp }: { kind: PlaneKind; color: string; tp: NonNullable<ReturnType<typeof useTP>> }) {
   const { window, level, crossX, crossY, slice, sliceMax, obliqueAngle, displayModality, fusionAlpha } = useStore();
   const labelVisible = useStore((s) => s.labelVisible);
-  const mode = tp.mri ? displayModality : "ct";
+  const mode = effectiveMode(tp.mri, displayModality);
   const labelStyle = buildLabelStyle(tp.manifest, labelVisible);
   const { tex, geo, edges } = useDisposable(useMemo(() => {
     const cross = { x: crossX, y: crossY, z: sliceFraction(slice, sliceMax) };

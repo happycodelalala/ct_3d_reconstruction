@@ -84,6 +84,11 @@ Companion tracking: this list is the actionable form of [design.md §8](design.m
 
 - [x] **Removed the abandoned-uncertainty ML code; preserved the findings. — DONE 2026-07-09 (user-directed).** The uncertainty-from-agreement approach was disproven (AUROC≈0.50) and pivoted away from, but its code lingered. Removed `calibration_experiment.py` (the falsification test) and the `--uncertainty`/`--jitter` experiment-D machinery from `medsam2_seed_test.py` (the per-voxel `uncertainty.nrrd` generator, unused by production). **Root cause:** the pivot updated the production path + some docs but left the experiment apparatus behind. The full experiment **design + findings are now self-contained in `tumour-triage-pipeline.md` §4/§8a** so it is not re-attempted; doc refs in design/schema/medsam2-setup updated. `segment`'s `shift`/`rng` (used by triage's seed ensemble) kept.
 
+## 3D rendering pipeline review (2026-07-09)
+
+- [x] **`CutPlane` rebuilt its slice texture even when hidden. — FIXED.** `Viewer3D.tsx` `CutPlane` gated `showCutPlane` only on the render (`return null`), not on its `useMemo` — so scrubbing/windowing/timepoint/fusion changes ran `makeRealSliceTexture` (full slice render + GPU `CanvasTexture` upload) and discarded it whenever the cut plane was toggled off. **Root cause:** the visibility flag gated output, not the resource build. Its siblings do it right — `LayerStack` checks `showLayers` inside the memo, `MPRBox` gates by not mounting `MPRQuad` (so `renderReformat` never runs). Fixed by gating the memo on `showCutPlane` too (added to the condition + deps). Not a leak (memoized+disposed), a wasted-work/inconsistency fix. `tsc` + `vite build` green.
+- [x] **Duplication: the "effective display mode" fallback. — FIXED.** `mri ? displayModality : "ct"` (use the chosen modality, fall back to CT when a timepoint has no MR) was copy-pasted across **6 sites in 3 files** (`Viewer3D` ×3, `MPRStrip` ×2, `CTPanel`). Extracted `dataset.ts::effectiveMode(mri, mode)` — one rule, same class as `sliceFraction`/`window_u8`. Behavior-preserving; full build green.
+
 ## Done in this review (2026-07-09)
 
 Doc inaccuracies found by adversarial verification against the code and already corrected:

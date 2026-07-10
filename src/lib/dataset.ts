@@ -119,6 +119,13 @@ export function shade(lum: number, label: number, labelStyle: LabelStyle, transp
 // Which volume the 2D/3D renderers draw from. "fusion" blends CT+MR.
 export type DisplayMode = "ct" | "mri" | "fusion";
 
+/** The mode a timepoint can actually render: the chosen mode, or "ct" when the
+ *  timepoint has no MR ("mri"/"fusion" aren't drawable without it). One rule, shared
+ *  by every 2D/3D view instead of re-inlining the CT fallback in each. */
+export function effectiveMode(mri: Uint8Array | undefined, mode: DisplayMode): DisplayMode {
+  return mri ? mode : "ct";
+}
+
 export interface RealDataset {
   manifest: Manifest;
   timepoints: Timepoint[];

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useStore } from "../store";
-import { buildLabelStyle, renderRealSlice, sliceWorldZ } from "../lib/dataset";
+import { buildLabelStyle, renderRealSlice, sliceWorldZ, effectiveMode } from "../lib/dataset";
 
 const SIZE = 360;
 
@@ -10,7 +10,7 @@ export default function CTPanel() {
   const { slice, window, level, labelVisible, setSlice, sliceMax, real, timepoint, crossX, crossY, set,
     displayModality, fusionAlpha } = useStore();
   const tp = real?.timepoints[timepoint];
-  const mode = tp?.mri ? displayModality : "ct";
+  const mode = effectiveMode(tp?.mri, displayModality);
   const labelStyle = buildLabelStyle(real?.manifest, labelVisible);
 
   useEffect(() => {

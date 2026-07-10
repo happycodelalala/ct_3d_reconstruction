@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useStore, sliceFraction } from "../store";
 import { renderReformat, renderMIP, realSampler, type PlaneKind } from "../lib/mpr";
-import { buildLabelStyle, type Manifest } from "../lib/dataset";
+import { buildLabelStyle, effectiveMode, type Manifest } from "../lib/dataset";
 
 const PLANES: { kind: PlaneKind; label: string }[] = [
   { kind: "coronal", label: "CORONAL" },
@@ -63,7 +63,7 @@ function ProjectionTile({ kind, label, data }: { kind: PlaneKind; label: string;
   const wrapRef = useRef<HTMLDivElement>(null);
   const { window, level, labelVisible, crossX, crossY, slice, sliceMax, obliqueAngle, setSlice, set,
     displayModality, fusionAlpha } = useStore();
-  const mode = data.mri ? displayModality : "ct";
+  const mode = effectiveMode(data.mri, displayModality);
   const labelStyle = buildLabelStyle(data.manifest, labelVisible);
 
   const result = useMemo(() => {
@@ -119,7 +119,7 @@ function MIPTile({ data }: { data: TPData }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const { window, level, labelVisible, crossX, slice, sliceMax, setSlice, set,
     displayModality, fusionAlpha } = useStore();
-  const mode = data.mri ? displayModality : "ct";
+  const mode = effectiveMode(data.mri, displayModality);
   const labelStyle = buildLabelStyle(data.manifest, labelVisible);
 
   const result = useMemo(() => {
