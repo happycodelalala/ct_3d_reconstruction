@@ -23,9 +23,8 @@ import os
 import numpy as np
 import SimpleITK as sitk
 from scipy.ndimage import binary_fill_holes
-from skimage import measure
 
-from asset_common import mesh_from_mask, write_gz  # shared pure asset helpers
+from asset_common import mesh_from_mask, write_gz, largest_cc  # shared pure asset helpers
 from preprocess_hn_mri import prepare_output_volumes, to_zyx, OUT_XY, CT_HU_LO, CT_HU_HI
 from geometry import warn_if_no_overlap
 
@@ -35,12 +34,7 @@ C_BODY, C_BONE, C_ORGAN = [90, 140, 200], [222, 216, 198], [150, 110, 205]
 
 def body_mask(ct_hu_zyx):
     """Largest connected component of non-air (HU > -500), holes filled = the patient body."""
-    m = ct_hu_zyx > -500.0
-    lab = measure.label(m)
-    if lab.max() == 0:
-        return m
-    m = lab == (int(np.argmax(np.bincount(lab.flat)[1:])) + 1)
-    return binary_fill_holes(m)
+    return binary_fill_holes(largest_cc(ct_hu_zyx > -500.0))
 
 
 def _to_grid(img_path, ref):

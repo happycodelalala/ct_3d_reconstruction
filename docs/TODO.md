@@ -114,6 +114,12 @@ Deep read of `register_ct_mr.py`. **Well-engineered and correct** — verified: 
 
 - [x] **Display-flip duplicated 7× across two files. — FIXED.** `sitk.Flip(img, [False, True])` (the "radiological +Y up" QA flip) was inlined 4× in `register_ct_mr` and 3× in `medsam2_seed_test`'s `write_qa`. Extracted `register_ct_mr._flip_y`; medsam2 imports it (as it already imports the sibling `_mr_slice_u8`). **The medsam2 sites were caught by a cross-file sweep**, not the first pass. Behavior-identical; py_compile + imports green.
 
+## MedSAM2 segment/propagate internals review (2026-07-09)
+
+Deep read of `medsam2_seed_test.py`'s engine (`prepare_case`/`segment`/`propagate`/`roi_crop`/`pick_seed_slice`). **Correct** — verified: `segment` maps `seed_full` into cropped coords via `seed_full - (cz.start or 0)` (handles `no_crop`'s `slice(None)`), and the seed is always inside the crop (it bounds the full GT bbox); `propagate` applies the seed prompt → forward, **resets + re-applies** → reverse, so the seed frame is written by both directions with the same prompt (no conflict) and the union covers all frames; the ROI paste-back shapes match; `dice`/`surface_metrics` guard empty masks. No bugs.
+
+- [x] **Largest-connected-component logic duplicated across 3 files. — FIXED.** `measure.label` + argmax-of-component-sizes appeared in `medsam2.largest_cc`, `build_envelope.body_mask` (inline), and `preprocess_hn.propagate_intensity` (a `sizes[0]=0; argmax` variant — same result). **A cross-file sweep caught the latter two**, not the first pass. Extracted `asset_common.largest_cc` (pure numpy/skimage, reuses its existing `measure` import); all three now share it, and `build_envelope`'s now-dead `from skimage import measure` was removed. Verified byte-identical envelope rebuild (body mesh + seg volume); medsam2/preprocess_hn are behavior-identical by construction. `triage.largest_cc_fraction` stays (it needs the counts for a *fraction*, not the mask).
+
 ## Done in this review (2026-07-09)
 
 Doc inaccuracies found by adversarial verification against the code and already corrected:

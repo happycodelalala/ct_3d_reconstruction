@@ -29,7 +29,7 @@ from skimage.morphology import disk
 from skimage.measure import label as cclabel
 from rt_utils import RTStructBuilder
 
-from asset_common import mesh_from_mask, window_u8, write_gz  # shared pure asset helpers
+from asset_common import mesh_from_mask, window_u8, write_gz, largest_cc  # shared pure asset helpers
 
 OUT_XY = 256          # in-plane output resolution
 OUT_Z_CAP = 220       # cap on output slices
@@ -134,10 +134,7 @@ def propagate_intensity(ct, seed, zooms, hu_pad=60.0, inplane_mm=6.0, z_span_mm=
             out[:, :, k] = new2d
             prev = new2d
 
-    lbl3 = cclabel(out)
-    if lbl3.max() > 0:
-        sizes = np.bincount(lbl3.ravel()); sizes[0] = 0
-        out = lbl3 == sizes.argmax()
+    out = largest_cc(out)
     return ndimage.binary_closing(out, iterations=1).astype(np.uint8)
 
 

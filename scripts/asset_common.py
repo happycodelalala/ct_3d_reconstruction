@@ -26,6 +26,16 @@ def write_gz(path, arr):
         f.write(gzip.compress(arr.reshape(-1).tobytes(), 6, mtime=0))
 
 
+def largest_cc(mask):
+    """The largest connected component of a binary mask, as uint8 (empty -> empty).
+    The one implementation of `measure.label` + argmax-of-component-sizes, shared by
+    the body mask, the H&N region-grow, and the MedSAM2 post-processing."""
+    if not np.any(mask):
+        return np.zeros_like(mask, dtype=np.uint8)
+    lab = measure.label(mask)
+    return (lab == (np.argmax(np.bincount(lab.ravel())[1:]) + 1)).astype(np.uint8)
+
+
 def mesh_from_mask(mask_zyx, ext, sigma=0.6, step=1):
     """Marching-cubes isosurface, vertices mapped into the shared [-ext, +ext] world
     space (index-normalized, so mesh and slices register). Returns

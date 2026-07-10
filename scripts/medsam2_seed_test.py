@@ -44,7 +44,7 @@ import SimpleITK as sitk
 # robust per-slice MR window used for QA (identical logic, don't re-copy it).
 from register_ct_mr import register_cached, load_ct_mr, _mr_slice_u8, _flip_y
 from geometry import canonicalize, warn_if_no_overlap
-from asset_common import window_u8  # shared window-to-uint8 (identical clip-then-scale)
+from asset_common import window_u8, largest_cc  # shared window-to-uint8 + largest-CC
 
 # Make the vendored MedSAM2 `sam2` package importable without a setup.py install:
 # sam2/__init__.py self-registers its hydra config module on import, so PYTHONPATH
@@ -246,14 +246,6 @@ def surface_metrics(pred, gt, spacing):
     sd = ((d_p2g <= tol).sum() + (d_g2p <= tol).sum()) / (d_p2g.size + d_g2p.size)
     return {"assd_mm": float(np.mean(alld)), "hd95_mm": float(np.percentile(alld, 95)),
             "surface_dice_2mm": float(sd)}
-
-
-def largest_cc(mask):
-    from skimage import measure
-    if mask.sum() == 0:
-        return mask
-    lab = measure.label(mask)
-    return (lab == (np.argmax(np.bincount(lab.flat)[1:]) + 1)).astype(np.uint8)
 
 
 # ------------------------------------------------------------------- QA image
