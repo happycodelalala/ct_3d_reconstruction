@@ -56,7 +56,6 @@ ONCOVOL turns paired **CT + MRI** studies into an interactive 3D reconstruction 
 | `build_envelope_dataset.py` | The multi-label **envelope** dataset builder (body/bone/organ/tumour, per-label colors + meshes). | (CLI) |
 | `medsam2_seed_test.py` | Promptable single-seed→3D MedSAM2 engine + seed-test harness. | `prepare_case`, `segment`, `dice` |
 | `triage_pipeline.py` | Recall-safe tumour-envelope triage (ensemble → consensus → dilate → prune → route). | `recall_safe_envelopes`, `recall_precision` |
-| `calibration_experiment.py` | The (failed, documented) uncertainty-calibration experiment behind the triage pivot. | (CLI) |
 | `build_index.cjs` | Scans manifests → `public/data/index.json` (the picker registry). | (CLI, `npm run data:index`) |
 | `preprocess_hn.py` | Legacy CT-only single-slice H&N builder (DICOM + RTSTRUCT). Shares `asset_common`; only its numpy index-based grid resampling is bespoke. | (CLI) |
 | `e2e.mjs`, `e2e_setup.sh` | Headless Puppeteer smoke test of the real app. | (CLI, `npm run e2e`) |
@@ -76,8 +75,8 @@ preprocess_hn_mri.py ──(output_grid, prepare_output_volumes) ──┤
 build_envelope_dataset.py     │                           │
                               │                           │
 medsam2_seed_test.py ──(prepare_case, segment, dice) ─────┘
-     ▲                        ▲
-triage_pipeline.py            calibration_experiment.py
+     ▲
+triage_pipeline.py
 
 preprocess_hn.py (legacy, numpy) — imports asset_common; only its numpy index-based
 grid resampling is its own (it can't use the SimpleITK output_grid).

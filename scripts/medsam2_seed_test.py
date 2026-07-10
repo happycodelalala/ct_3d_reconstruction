@@ -19,12 +19,12 @@ Planned experiments (docs §4):
   A  --prompt mask                     best-case ceiling of the mechanism
   B  --prompt box                      quantify the mask-vs-box gap
   C  --prompt mask --seed-slice N      off-centre seed → does it drift?
-  D  --prompt mask --uncertainty 8     jittered-prompt consensus + uncertainty map
+  (experiment D — jittered-prompt consensus + per-voxel uncertainty — was disproven
+   as a confidence signal and removed; design + findings: tumour-triage-pipeline.md §4)
 
 Outputs (under --out, default runs/medsam2_seed/<case>_<prompt>):
   pred_mask.nrrd     predicted 3D mask on the CT grid
   qa.png             pred(red) vs GT(green) contours on MR, several axial slices
-  uncertainty.nrrd   per-voxel disagreement map           (only with --uncertainty)
   metrics.json       Dice (+ optional surface metrics), seed slice, settings
 and prints the metrics.
 """
@@ -177,7 +177,7 @@ def slice_bbox(mask2d, shift=0, rng=None):
 def build_prompt(kind, mask_arr, seed_idx, shift=0, rng=None):
     """Prompt payload from the seed slice's mask — pure data, no predictor:
     ("mask", 2D bool array) or ("box", [x0,y0,x1,y1]). shift/rng translate it by a
-    small random offset for the jittered uncertainty runs (experiment D)."""
+    small random offset for jittered-seed ensembles (see triage_pipeline.py)."""
     seed_mask2d = mask_arr[seed_idx].astype(bool)
     if kind == "box":
         return ("box", slice_bbox(seed_mask2d, shift, rng))
@@ -368,8 +368,6 @@ def main():
                     help="crop to the mandible ROI + this margin (mm) before inference; "
                          "keeps the object a sane fraction of 512² and bounds z-propagation")
     ap.add_argument("--no-crop", action="store_true", help="feed the whole volume (reproduces the over-segmentation failure)")
-    ap.add_argument("--uncertainty", type=int, default=0, metavar="N", help="N jittered runs → consensus + map")
-    ap.add_argument("--jitter", type=int, default=12, help="max prompt jitter in px (uncertainty runs)")
     ap.add_argument("--no-largest-cc", action="store_true", help="skip largest-connected-component cleanup")
     ap.add_argument("--surface", action="store_true", help="also compute ASSD / HD95 / surface-Dice")
     ap.add_argument("--checkpoint", default=DEFAULT_CKPT)
@@ -413,22 +411,6 @@ def main():
         metrics.update({k: (round(v, 3) if isinstance(v, float) else v)
                         for k, v in surface_metrics(pred, gt_full,
                                                      grid_img.GetSpacing()).items()})
-
-    # ---- uncertainty (experiment D) ---------------------------------------
-    if a.uncertainty > 0:
-        acc = np.zeros(full_shape, np.float32)
-        for k in range(a.uncertainty):
-            rng = np.random.RandomState(1000 + k)
-            m = segment(ctx, seed_full, a.prompt, a.jitter, rng, largest_cc_on=not a.no_largest_cc)
-            acc += m
-            print(f"    uncertainty run {k+1}/{a.uncertainty}  Dice {dice(m, gt_full):.3f}")
-        vote = acc / a.uncertainty
-        consensus = (vote >= 0.5).astype(np.uint8)
-        uimg = sitk.GetImageFromArray((vote * (vote < 1.0) * (vote > 0.0)).astype(np.float32))
-        uimg.CopyInformation(grid_img)
-        sitk.WriteImage(uimg, os.path.join(out_dir, "uncertainty.nrrd"))
-        metrics["consensus_dice"] = round(dice(consensus, gt_full), 4)
-        metrics["uncertain_voxels"] = int(((vote > 0) & (vote < 1)).sum())
 
     # ---- perf / inference estimate ----------------------------------------
     timing["total_s"] = round(clk() - t_start, 2)

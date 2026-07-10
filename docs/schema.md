@@ -241,7 +241,7 @@ Dataset builders and their outputs. Full arg detail in each script's `--help`; c
 | `build_envelope_dataset.py` | `--case-dir`, `--tumour` (NRRD) | `--organ-glob "*OAR_*.nrrd"`, `--bone-hu 200`, `--tumour-label "tumour"`, `--tumour-color "255,150,70"`, `--id`, `--title` | `ct/mri/seg.bin.gz`, `mesh{1,2,3,4}.json`, `manifest.json` (multi-label, `labelColors`, `metrics:null`) |
 | `preprocess_hn_mri.py` | `--case-dir` | `--roi-glob "*OAR_Bone_Mandible*.nrrd"`, `--roi-label "mandible"`, `--id`, `--title` | `ct/mri/seg.bin.gz`, `tumor.json`, `metrics.json`, `manifest.json` (`labels:{2:…}`, `tumorMesh`) |
 | `register_ct_mr.py` | `--case-dir` | `--out` | (to `hanseg_data/registration_check/<case>/`) `mr_in_ct.nrrd`, `transform.tfm`, `overlay_*.png`, `checker_after.png`, `mandible_on_MR.png`, `qa.json` |
-| `medsam2_seed_test.py` | `--case-dir` OR (`--mr` + `--mask`) | `--modality {mr,ct}`, `--prompt {mask,box}`, `--oar Bone_Mandible`, `--crop-margin-mm 24`, `--surface`, `--uncertainty N` | (to `runs/medsam2_seed/…`) `pred_mask.nrrd`, `qa.png`, `metrics.json`, `uncertainty.nrrd`? |
+| `medsam2_seed_test.py` | `--case-dir` OR (`--mr` + `--mask`) | `--modality {mr,ct}`, `--prompt {mask,box}`, `--oar Bone_Mandible`, `--crop-margin-mm 24`, `--surface` | (to `runs/medsam2_seed/…`) `pred_mask.nrrd`, `qa.png`, `metrics.json` |
 | `triage_pipeline.py` | `--case-dir` | `--oar Brainstem`, `--modality mr`, `--ensemble 3`, `--dilate-mm 2`, `--converge-min 0.7`, `--coherence-min 0.9` | (to `runs/triage/…`) `envelope.nrrd`, `report.json` |
 | `geometry.py` | `--case-dir` | — | (audit CLI; prints orientation + alignment, non-zero exit on misalignment) |
 | `build_index.cjs` | scans `public/data/*/manifest.json` | — | `public/data/index.json` |

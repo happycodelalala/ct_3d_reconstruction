@@ -82,7 +82,7 @@ Companion tracking: this list is the actionable form of [design.md §8](design.m
 
 - [ ] **Local disk artifacts (gitignored, not in repo) — user's call to reclaim ~5.8G:** `hanseg_data/HaN-Seg.zip` (4.6G, redundant after extraction to `HaN-Seg/`), `runs/sweep` (1.2G, orphaned MedSAM2 prompt/modality sweeps — no committed script produces it), `runs/medsam2_seed` (812M) + `runs/triage` (405M) experiment outputs. Not deleted here (large, user-created data). `hanseg_data/registration_check/mr_in_ct.nrrd` (~847M) is a regenerable intermediate.
 
-- [ ] **`calibration_experiment.py` — intentionally kept, not stale.** It's orphaned code-wise (`imports=0`) but is the reproducible **falsification record** for the failed uncertainty approach, referenced 4× in `tumour-triage-pipeline.md`. Keep as evidence; revisit only if the triage doc's §4/§8a results are ever inlined.
+- [x] **Removed the abandoned-uncertainty ML code; preserved the findings. — DONE 2026-07-09 (user-directed).** The uncertainty-from-agreement approach was disproven (AUROC≈0.50) and pivoted away from, but its code lingered. Removed `calibration_experiment.py` (the falsification test) and the `--uncertainty`/`--jitter` experiment-D machinery from `medsam2_seed_test.py` (the per-voxel `uncertainty.nrrd` generator, unused by production). **Root cause:** the pivot updated the production path + some docs but left the experiment apparatus behind. The full experiment **design + findings are now self-contained in `tumour-triage-pipeline.md` §4/§8a** so it is not re-attempted; doc refs in design/schema/medsam2-setup updated. `segment`'s `shift`/`rng` (used by triage's seed ensemble) kept.
 
 ## Done in this review (2026-07-09)
 

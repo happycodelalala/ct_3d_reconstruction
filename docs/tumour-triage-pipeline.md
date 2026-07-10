@@ -55,8 +55,9 @@ The original premise was:
 > Consensus + per-voxel uncertainty, computed from **noisy** seeds, is calibrated — high
 > uncertainty predicts where the mask is wrong.
 
-We tested it first (`scripts/calibration_experiment.py`, brainstem/mandible proxies with simulated
-noisy seeds) and it **fails**: **AUROC ≈ 0.50** (uncertainty is no better than chance at ranking
+We tested it first (an ensemble/calibration experiment on brainstem/mandible proxies with simulated
+noisy seeds — code removed 2026-07-09 once the result was banked; design + findings preserved here
+and in §8a) and it **fails**: **AUROC ≈ 0.50** (uncertainty is no better than chance at ranking
 error voxels), and **~22 % of missed tumour is a "silent miss"** — invisible to the uncertainty map.
 It fails identically with 0 % gross-contradiction seeds, so it's intrinsic, not seed-noise.
 
@@ -101,7 +102,7 @@ CT/MR + seeds
   *added* safeguard — real data will have registration failures the pipeline must not trust
   silently.
 - **[A] Ensemble propagate.** Take the seeds as they are (assume one lesion), plus jittered copies
-  (`--uncertainty`, scaled), each a tight-ROI bidirectional MedSAM2 run on **MR** (tumours are
+  (`--ensemble` N, `--jitter` px), each a tight-ROI bidirectional MedSAM2 run on **MR** (tumours are
   soft-tissue; CT is used only for the gate in [C]). Tight ROI is the first-order drift control —
   Dice collapsed 0.89 → 0.67 → 0.20 as the ROI loosened.
 - **[B] Consensus → recall-safe envelope.** Vote/STAPLE the N masks → one mask, then **dilate it
@@ -154,7 +155,17 @@ the real-world quality metric.
 
 ## 8a. Measured results (2026-07-04, `case_01`)
 
-`scripts/calibration_experiment.py` on the brainstem (MR) and mandible (CT) proxies.
+Ran on the brainstem (MR) and mandible (CT) proxies (OARs with known GT). **The experiment code was
+removed once the result was banked** (2026-07-09); the design and findings are recorded here so the
+disproven approach is not re-attempted:
+
+> **Experiment design (for the record).** Propagate an ensemble of the same seed under simulated
+> noise — normal placement jitter plus a fraction of gross-shift "contradiction" seeds — then vote
+> to a `consensus` (majority) and a per-voxel `uncertainty = 1 − |2·vote − 1|` (0 at full agreement,
+> 1 at a 50/50 split). Measure: **(1)** does consensus Dice beat the best single noisy seed; **(2)**
+> the **AUROC of `uncertainty` ranking the error voxels** (FN ∪ FP) above correct ones — the
+> load-bearing test — separating disagreement-visible errors from "blind" errors where every seed
+> agrees (vote 0 or 1). **Do not rebuild this as a confidence signal** — see the root cause in §4.
 
 **Calibration (the load-bearing test) — FAILED** (see §4 for the root cause): AUROC ≈ 0.50 for
 uncertainty-predicts-error, ~22–24 % silent misses, and consensus does not beat the best single
@@ -198,12 +209,11 @@ mask is trivial. **The cohort is registration-bound, not GPU-bound.**
 ## 11. What exists vs what's new — build order (risk-first)
 
 **Exists:** cached MR→CT registration (with MI); MedSAM2 seed→propagate harness with tight-ROI
-crop, `--uncertainty` (jittered consensus + uncertainty map), surface metrics; OAR masks; the
-CT/MR/fusion workstation.
+crop and surface metrics; OAR masks; the CT/MR/fusion workstation.
 
 **Build order (each gates the next):**
-1. ✅ **Calibration experiment (§8/§8a)** — `scripts/calibration_experiment.py`. Result: variance-
-   uncertainty fails; pivoted to the recall-safe envelope (§4).
+1. ✅ **Calibration experiment (§8/§8a)** — variance-uncertainty fails (AUROC≈0.50); pivoted to the
+   recall-safe envelope (§4). *Experiment code removed 2026-07-09; design + result recorded in §4/§8a.*
 2. ✅ **Reusable engine** — `prepare_case`/`segment` in `scripts/medsam2_seed_test.py`.
 3. ✅ **MVP pipeline** — `scripts/triage_pipeline.py`: good seeds → ensemble → consensus →
    recall-safe envelope → air-prune → coverage/coherence confidence → route → `envelope.nrrd`

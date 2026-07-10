@@ -104,11 +104,11 @@ Key flags (`--help` for all):
 | `--prompt {mask,box}` | seed prompt type (mask ≥ box in practice) |
 | `--crop-margin-mm N` | ROI crop margin — **first-order** knob; tight (≈6) curbs drift, loose over-segments |
 | `--seed-slice N` | force an off-centre seed (drift test); default = largest-area slice |
-| `--uncertainty N` | N jittered runs → consensus mask + per-voxel uncertainty map |
 | `--surface` | also compute ASSD / HD95 / surface-Dice |
 | `--no-crop` | feed the whole volume (reproduces the over-segmentation failure) |
 
-The four planned experiments:
+The three experiments (experiment D — jittered-prompt uncertainty — was disproven as a confidence
+signal and removed; design + findings in [tumour-triage-pipeline.md §4](tumour-triage-pipeline.md)):
 
 ```bash
 # A  ceiling         mask, centre seed, tight crop
@@ -117,14 +117,12 @@ The four planned experiments:
 .venv/bin/python scripts/medsam2_seed_test.py --case-dir hanseg_data/HaN-Seg/set_1/case_01 --modality ct --prompt box  --crop-margin-mm 6
 # C  drift from an off-centre seed
 .venv/bin/python scripts/medsam2_seed_test.py --case-dir hanseg_data/HaN-Seg/set_1/case_01 --modality ct --prompt mask --seed-slice 120
-# D  uncertainty from jittered prompts
-.venv/bin/python scripts/medsam2_seed_test.py --case-dir hanseg_data/HaN-Seg/set_1/case_01 --modality ct --prompt mask --crop-margin-mm 6 --uncertainty 8
 ```
 
 **Outputs** land in `runs/medsam2_seed/<case>_<modality>_<prompt>/` (gitignored):
 `pred_mask.nrrd` (mask on the CT grid), `qa.png` (pred = red, GT = green contours),
-`metrics.json` (Dice + surface + a `perf` block: per-slice time, VRAM, timings),
-`uncertainty.nrrd` (with `--uncertainty`). Metrics also print to the console.
+`metrics.json` (Dice + surface + a `perf` block: per-slice time, VRAM, timings).
+Metrics also print to the console.
 
 ## 6. View a prediction in the workstation
 
