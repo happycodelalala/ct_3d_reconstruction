@@ -39,7 +39,10 @@ def largest_cc(mask):
 def mesh_from_mask(mask_zyx, ext, sigma=0.6, step=1):
     """Marching-cubes isosurface, vertices mapped into the shared [-ext, +ext] world
     space (index-normalized, so mesh and slices register). Returns
-    (mesh_dict, n_vertices, n_faces)."""
+    (mesh_dict, n_vertices, n_faces). An empty mask yields an empty mesh — marching_cubes
+    raises on a flat volume, and a caller (e.g. build_envelope) may have an empty layer."""
+    if not np.any(mask_zyx):
+        return ({"positions": [], "indices": []}, 0, 0)
     sm = gaussian(mask_zyx.astype(np.float32), sigma=sigma)
     v, fc, _, _ = measure.marching_cubes(sm, level=0.5, step_size=step)
     Zd, Yd, Xd = mask_zyx.shape

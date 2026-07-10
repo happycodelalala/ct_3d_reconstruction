@@ -129,6 +129,12 @@ Deep read of `triage_pipeline.py`. **Correct** — verified `recall_safe_envelop
 - [ ] **(P3, design nuance) `coherence` is measured on the *dilated envelope*, not the consensus.** The fragmentation signal (`largest_cc_fraction`, doc §5 "propagation broke up") runs on the `+dilate-mm` envelope, where dilation has already merged fragments closer than ~2·radius — so it under-detects the small fragmentation the *consensus* would show. **Not changed:** it alters the measured pipeline's routing and needs GPU re-measurement on real data. Consider measuring coherence on the pre-dilation `consensus` for a signal that matches the stated intent.
   - **Refs:** `scripts/triage_pipeline.py:119`.
 
+## Envelope builder layer-assembly review (2026-07-09)
+
+Deep read of `build_envelope_dataset.py`. **Correct** — paint precedence (list order body→bone→organ→tumour, later wins → `seg` = last containing layer), per-layer meshes from each full mask (independent of 2D precedence), `bone = (ct_hu>200) & body` (excludes CT table), and `_to_grid(a.tumour)` evaluated once. No bugs.
+
+- [x] **`mesh_from_mask` crashed on an empty mask; `build_envelope` didn't guard it. — FIXED.** `marching_cubes(level=0.5)` raises "level must be within data range" on an all-empty volume. `preprocess_hn_mri`/`preprocess_hn` guard `mask.sum()==0` *before* meshing, but `build_envelope` meshes every layer with no check — so a misaligned/empty organ or tumour layer (which `warn_if_no_overlap` only *warns* about) would crash with a cryptic skimage error. **Root cause:** the empty case was left to each caller instead of the shared helper. Guarded it in `asset_common.mesh_from_mask` (empty mask → empty mesh) — all callers now safe; `preprocess_hn_mri`/`hn` still `raise` first on empty (unchanged). Verified: empty→empty mesh no crash, non-empty envelope rebuild byte-identical; frontend renders an empty mesh as nothing.
+
 ## Done in this review (2026-07-09)
 
 Doc inaccuracies found by adversarial verification against the code and already corrected:
