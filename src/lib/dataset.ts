@@ -89,10 +89,14 @@ export function buildLabelStyle(m: Manifest | undefined, visible: Record<number,
   return out;
 }
 
-// Clamp to the unit interval — the shared primitive for 0..1 fractions (crosshair
-// positions, click coords, UV) instead of re-inlining Math.max(0, Math.min(1, …)).
+// Clamp v to [lo, hi] — the one clamp primitive (slice/timepoint indices, 0..1
+// fractions) instead of re-inlining Math.max(lo, Math.min(hi, …)) at each site.
+export function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+// Clamp to the unit interval (crosshair positions, click coords, UV).
 export function clamp01(v: number): number {
-  return Math.max(0, Math.min(1, v));
+  return clamp(v, 0, 1);
 }
 
 // Blend a greyscale luminance toward a label colour by SEG_TINT (the seg overlay tint).
@@ -109,7 +113,7 @@ export function tintPixel(lum: number, c: [number, number, number]): [number, nu
 export function windowLum(v01: number, level: number, window: number): number {
   const lo = level - window / 2;
   const hi = level + window / 2;
-  return Math.max(0, Math.min(255, Math.round(((v01 - lo) / Math.max(1e-4, hi - lo)) * 255)));
+  return clamp(Math.round(((v01 - lo) / Math.max(1e-4, hi - lo)) * 255), 0, 255);
 }
 
 // Greyscale luminance + seg label -> RGBA, with the label tint and air transparency.

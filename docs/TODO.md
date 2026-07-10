@@ -102,6 +102,12 @@ Deep read of the pixel pipeline (`dataset.ts`: `renderRealSlice`/`srcLum01`/`win
 
 - [x] **Duplicated `clamp01` primitive. — FIXED.** Clamp-to-[0,1] was a *named* function in `MPRStrip` but re-inlined as `Math.max(0, Math.min(1, …))` in `CTPanel` (×2) and `mpr.ts` `crossUV` (×6). Hoisted `clamp01` to `dataset.ts` (next to `mix`/`windowLum`); all sites route through it. Same class as `sliceFraction`/`effectiveMode`/`fitBox`. tsc + vite build green.
 
+## Store (`store.ts`) feature review (2026-07-09)
+
+Deep read of the state hub. **Correct** — `setSlice`/`setTimepoint` clamp; `setWindow`/`setLevel` don't but inputs are bounded; `loadDataset` guards concurrent loads (no stale-response race) and clears `loading` on both success and error (can't get stuck); `setDisplayMode`'s `m === "mri" ? mriWL ?? defaultWL : defaultWL` parses correctly (`??` > `?:`) and `effectiveMode` + the `loadDataset` reset keep `displayModality` safe. No bugs.
+
+- [x] **Clamp-primitive duplication consolidated. — FIXED.** `setSlice`/`setTimepoint` inlined `Math.max(0, Math.min(N, v))` — the `[0,N]` sibling of the just-added `clamp01`. Root cause: extracted `clamp01` but no *general* clamp, so index clamps stayed inlined. Made `dataset.ts::clamp(v, lo, hi)` the single primitive; `clamp01` derives from it; `store.ts` `setSlice`/`setTimepoint` use it. **Sibling caught in the same sweep:** `windowLum` (same file) inlined a `[0,255]` clamp → now uses `clamp` too. No inline two-sided clamps remain in `src`. tsc + vite build green.
+
 ## Done in this review (2026-07-09)
 
 Doc inaccuracies found by adversarial verification against the code and already corrected:

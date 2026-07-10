@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { loadDataset as fetchDataset, loadIndex as fetchIndex, type DatasetEntry, type DisplayMode, type RealDataset } from "./lib/dataset";
+import { loadDataset as fetchDataset, loadIndex as fetchIndex, clamp, type DatasetEntry, type DisplayMode, type RealDataset } from "./lib/dataset";
 
 /** Normalized slice position (crosshair z) in [0,1]. Guards the single-slice case
  *  (sliceMax = dims[2]-1 = 0) so it can't produce 0/0 = NaN. Shared by every view
@@ -104,9 +104,9 @@ export const useStore = create<AppState>((set, get) => ({
       .catch((e) => set({ loading: false, loadError: String(e?.message || e) }));
   },
   setTimepoint: (t) =>
-    set((st) => ({ timepoint: st.real ? Math.max(0, Math.min(st.real.timepoints.length - 1, t)) : 0 })),
+    set((st) => ({ timepoint: st.real ? clamp(t, 0, st.real.timepoints.length - 1) : 0 })),
   togglePlaying: () => set((s) => ({ playing: !s.playing })),
-  setSlice: (s) => set((st) => ({ slice: Math.max(0, Math.min(st.sliceMax, s)) })),
+  setSlice: (s) => set((st) => ({ slice: clamp(s, 0, st.sliceMax) })),
   setWindow: (w) => set({ window: w }),
   setLevel: (l) => set({ level: l }),
   // switching modality also loads that modality's default W/L (the MR is stored
