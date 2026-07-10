@@ -216,6 +216,11 @@ def _mid_slices(vol3d):
     return [vol3d[:, :, z // 2], vol3d[:, y // 2, :], vol3d[x // 2, :, :]]
 
 
+def _flip_y(img):
+    """Flip the Y axis for radiological display (+Y up) in the QA overlays."""
+    return sitk.Flip(img, [False, True])
+
+
 def write_overlays(fixed_ct, moving_mr, transform, out_dir):
     os.makedirs(out_dir, exist_ok=True)
     ct_u8 = _ct_u8(fixed_ct)
@@ -232,14 +237,14 @@ def write_overlays(fixed_ct, moving_mr, transform, out_dir):
         mr_u8 = mr_resampled(tx)
         # tile the three mid-plane overlays side by side into one PNG
         tiles = [_rgb_overlay(c, m) for c, m in zip(_mid_slices(ct_u8), _mid_slices(mr_u8))]
-        tiles = [sitk.Flip(t, [False, True]) for t in tiles]  # radiological: +Y up
+        tiles = [_flip_y(t) for t in tiles]
         sitk.WriteImage(sitk.Tile(tiles, [3, 1], 0), os.path.join(out_dir, f"overlay_{tag}.png"))
 
     # checkerboard of the registered pair (grey CT vs grey MR)
     mr_u8 = mr_resampled(transform)
     checks = [sitk.CheckerBoard(c, m, [6, 6]) for c, m in
               zip(_mid_slices(ct_u8), _mid_slices(mr_u8))]
-    checks = [sitk.Flip(c, [False, True]) for c in checks]
+    checks = [_flip_y(c) for c in checks]
     sitk.WriteImage(sitk.Tile(checks, [3, 1], 0), os.path.join(out_dir, "checker_after.png"))
 
     # the registered MR volume itself, for downstream use
@@ -271,9 +276,8 @@ def mandible_qa(case_dir, fixed_ct, mr_vol, out_dir):
     man = sitk.Resample(sitk.ReadImage(cand[0], sitk.sitkUInt8), fixed_ct,
                         sitk.Transform(), sitk.sitkNearestNeighbor, 0, sitk.sitkUInt8)
     zc = int(np.argmax(sitk.GetArrayViewFromImage(man).sum(axis=(1, 2))))  # densest mandible slice
-    mr_sl = sitk.Flip(_mr_slice_u8(mr_vol[:, :, zc]), [False, True])
-    c = sitk.Cast(sitk.Flip(sitk.BinaryContour(man[:, :, zc], fullyConnected=True),
-                            [False, True]) > 0, sitk.sitkUInt8)
+    mr_sl = _flip_y(_mr_slice_u8(mr_vol[:, :, zc]))
+    c = sitk.Cast(_flip_y(sitk.BinaryContour(man[:, :, zc], fullyConnected=True)) > 0, sitk.sitkUInt8)
     notc = 1 - c
     rgb = sitk.Compose(mr_sl * notc, mr_sl * notc + c * 255, mr_sl * notc)  # green contour on grey MR
     sitk.WriteImage(rgb, os.path.join(out_dir, "mandible_on_MR.png"))

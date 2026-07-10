@@ -108,6 +108,12 @@ Deep read of the state hub. **Correct** — `setSlice`/`setTimepoint` clamp; `se
 
 - [x] **Clamp-primitive duplication consolidated. — FIXED.** `setSlice`/`setTimepoint` inlined `Math.max(0, Math.min(N, v))` — the `[0,N]` sibling of the just-added `clamp01`. Root cause: extracted `clamp01` but no *general* clamp, so index clamps stayed inlined. Made `dataset.ts::clamp(v, lo, hi)` the single primitive; `clamp01` derives from it; `store.ts` `setSlice`/`setTimepoint` use it. **Sibling caught in the same sweep:** `windowLum` (same file) inlined a `[0,255]` clamp → now uses `clamp` too. No inline two-sided clamps remain in `src`. tsc + vite build green.
 
+## Python registration internals review (2026-07-09)
+
+Deep read of `register_ct_mr.py`. **Well-engineered and correct** — verified: the never-regress guard scores seed/rigid/affine with one consistent fixed-seed metric so they compare directly; `seed` is copied from `rigid0` *before* Stage 1 mutates it in place (correct coarse-only fallback); the transform is FIXED→MOVING in physical space so it stays valid across LPS canonicalization; `mandible_qa`'s `zc` from the `(z,y,x)` argmax indexes the sitk z-slice correctly. No bugs.
+
+- [x] **Display-flip duplicated 7× across two files. — FIXED.** `sitk.Flip(img, [False, True])` (the "radiological +Y up" QA flip) was inlined 4× in `register_ct_mr` and 3× in `medsam2_seed_test`'s `write_qa`. Extracted `register_ct_mr._flip_y`; medsam2 imports it (as it already imports the sibling `_mr_slice_u8`). **The medsam2 sites were caught by a cross-file sweep**, not the first pass. Behavior-identical; py_compile + imports green.
+
 ## Done in this review (2026-07-09)
 
 Doc inaccuracies found by adversarial verification against the code and already corrected:

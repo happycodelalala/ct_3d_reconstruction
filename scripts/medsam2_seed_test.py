@@ -42,7 +42,7 @@ import SimpleITK as sitk
 
 # scripts/ is on sys.path (this file lives here) → reuse the cached registration and the
 # robust per-slice MR window used for QA (identical logic, don't re-copy it).
-from register_ct_mr import register_cached, load_ct_mr, _mr_slice_u8
+from register_ct_mr import register_cached, load_ct_mr, _mr_slice_u8, _flip_y
 from geometry import canonicalize, warn_if_no_overlap
 from asset_common import window_u8  # shared window-to-uint8 (identical clip-then-scale)
 
@@ -266,11 +266,9 @@ def write_qa(grid_img, mr_vol, pred_arr, gt_arr, seed_idx, out_png):
     gt_img = sitk.GetImageFromArray(gt_arr.astype(np.uint8)); gt_img.CopyInformation(grid_img)
     tiles = []
     for z in picks:
-        mr = sitk.Flip(_mr_slice_u8(mr_vol[:, :, z]), [False, True])
-        pc = sitk.Cast(sitk.Flip(sitk.BinaryContour(pred_img[:, :, z] > 0, fullyConnected=True),
-                                 [False, True]) > 0, sitk.sitkUInt8)
-        gc = sitk.Cast(sitk.Flip(sitk.BinaryContour(gt_img[:, :, z] > 0, fullyConnected=True),
-                                 [False, True]) > 0, sitk.sitkUInt8)
+        mr = _flip_y(_mr_slice_u8(mr_vol[:, :, z]))
+        pc = sitk.Cast(_flip_y(sitk.BinaryContour(pred_img[:, :, z] > 0, fullyConnected=True)) > 0, sitk.sitkUInt8)
+        gc = sitk.Cast(_flip_y(sitk.BinaryContour(gt_img[:, :, z] > 0, fullyConnected=True)) > 0, sitk.sitkUInt8)
         base = mr * (1 - sitk.Cast((pc | gc) > 0, sitk.sitkUInt8))
         rgb = sitk.Compose(base + pc * 255, base + gc * 255, base)  # R=pred, G=GT
         tiles.append(rgb)
