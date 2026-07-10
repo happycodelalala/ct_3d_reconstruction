@@ -96,6 +96,12 @@ Deep read of `mpr.ts` + `MPRStrip.tsx`. **No bugs** — verified the click→cro
 - [x] **`mpr.ts`: aspect→canvas-size math duplicated** in `renderReformat` + `renderMIP` (identical 3 lines) → extracted `fitBox(aspect, base)`.
 - [x] **`MPRStrip.tsx`: the tile shell duplicated** — `ProjectionTile` and `MIPTile` each re-implemented the canvas-write `useEffect`, the crosshair-overlay JSX (3 divs), the `proj-tile`/`proj-stage` structure, and the click fx/fy math. **Root cause:** no shared projection-tile component. Extracted `ProjCanvas` (takes `img`/`aspect`/`cu`/`cv`/`label`/`depth` + `onPick(fx,fy)`/`onWheel(deltaY)`); the two tiles are now thin wrappers differing only in their `useMemo` and handlers. 169→149 lines; `putImageData` and the overlay now single-source. `tsc` + `vite build` green (visual/interactive check would need the browser e2e).
 
+## 2D slice-rendering feature review (2026-07-09)
+
+Deep read of the pixel pipeline (`dataset.ts`: `renderRealSlice`/`srcLum01`/`windowLum`/`shade`/`tintPixel`/`labelColor`) + its consumer `CTPanel.tsx`. **Correct** — verified the storage-index math + Y-flip in `renderRealSlice`, the `windowLum` div-by-zero guard, and the crosshair round-trip in CTPanel (`click (fx,fy) → {crossX:fx, crossY:1−fy} → displayed at (fx,fy)`), plus that `crossX`/`crossY` are consistent world-fractions across CTPanel and every MPR tile (`crossY=1` ↦ max-y in each view's axis). The shading path (`srcLum01`→`windowLum`→`shade`) is already shared with the MPR sampler. No bugs.
+
+- [x] **Duplicated `clamp01` primitive. — FIXED.** Clamp-to-[0,1] was a *named* function in `MPRStrip` but re-inlined as `Math.max(0, Math.min(1, …))` in `CTPanel` (×2) and `mpr.ts` `crossUV` (×6). Hoisted `clamp01` to `dataset.ts` (next to `mix`/`windowLum`); all sites route through it. Same class as `sliceFraction`/`effectiveMode`/`fitBox`. tsc + vite build green.
+
 ## Done in this review (2026-07-09)
 
 Doc inaccuracies found by adversarial verification against the code and already corrected:

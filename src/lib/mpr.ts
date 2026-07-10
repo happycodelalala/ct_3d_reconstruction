@@ -2,7 +2,7 @@
 // oblique projections, plus a maximum-intensity projection (MIP), via a common
 // world-space sampler over the loaded volume.
 
-import { srcLum01, mix, windowLum, shade, type DisplayMode, type LabelStyle, type Manifest } from "./dataset";
+import { srcLum01, mix, windowLum, shade, clamp01, type DisplayMode, type LabelStyle, type Manifest } from "./dataset";
 
 export type PlaneKind = "coronal" | "sagittal" | "oblique";
 
@@ -113,8 +113,8 @@ export function renderReformat(
     }
   }
   const crossUV: [number, number] = [
-    Math.max(0, Math.min(1, cu / (2 * uExt) + 0.5)),
-    Math.max(0, Math.min(1, 0.5 - cv / (2 * vExt))),
+    clamp01(cu / (2 * uExt) + 0.5),
+    clamp01(0.5 - cv / (2 * vExt)),
   ];
   return { img, aspect, crossUV, basis };
 }
@@ -160,8 +160,8 @@ export function renderMIP(
   }
   const basis = planeBasis("coronal", ext, cross, 0);
   const crossUV: [number, number] = [
-    Math.max(0, Math.min(1, cross.x)),
-    Math.max(0, Math.min(1, 1 - cross.z)),
+    clamp01(cross.x),
+    clamp01(1 - cross.z),
   ];
   return { img, aspect, crossUV, basis };
 }

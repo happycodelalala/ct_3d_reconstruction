@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useStore } from "../store";
-import { buildLabelStyle, renderRealSlice, sliceWorldZ, effectiveMode } from "../lib/dataset";
+import { buildLabelStyle, renderRealSlice, sliceWorldZ, effectiveMode, clamp01 } from "../lib/dataset";
 
 const SIZE = 360;
 
@@ -35,8 +35,8 @@ export default function CTPanel() {
   };
   const onClick = (e: React.MouseEvent) => {
     const r = stageRef.current!.getBoundingClientRect();
-    const fx = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-    const fy = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+    const fx = clamp01((e.clientX - r.left) / r.width);
+    const fy = clamp01((e.clientY - r.top) / r.height);
     set({ crossX: fx, crossY: 1 - fy });
   };
 

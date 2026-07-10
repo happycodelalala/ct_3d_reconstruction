@@ -89,6 +89,12 @@ export function buildLabelStyle(m: Manifest | undefined, visible: Record<number,
   return out;
 }
 
+// Clamp to the unit interval — the shared primitive for 0..1 fractions (crosshair
+// positions, click coords, UV) instead of re-inlining Math.max(0, Math.min(1, …)).
+export function clamp01(v: number): number {
+  return Math.max(0, Math.min(1, v));
+}
+
 // Blend a greyscale luminance toward a label colour by SEG_TINT (the seg overlay tint).
 export function mix(a: number, b: number, t: number): number {
   return Math.round(a + (b - a) * t);

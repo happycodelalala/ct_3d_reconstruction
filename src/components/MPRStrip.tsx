@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useStore, sliceFraction } from "../store";
 import { renderReformat, renderMIP, realSampler, type PlaneKind } from "../lib/mpr";
-import { buildLabelStyle, effectiveMode, type Manifest } from "../lib/dataset";
+import { buildLabelStyle, effectiveMode, clamp01, type Manifest } from "../lib/dataset";
 
 const PLANES: { kind: PlaneKind; label: string }[] = [
   { kind: "coronal", label: "CORONAL" },
@@ -144,6 +144,3 @@ function MIPTile({ data }: { data: TPData }) {
     label="MIP · CORONAL" depth="MAX" onPick={onPick} onWheel={onWheel} />;
 }
 
-function clamp01(v: number) {
-  return Math.max(0, Math.min(1, v));
-}
