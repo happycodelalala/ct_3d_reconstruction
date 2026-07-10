@@ -28,7 +28,7 @@ import SimpleITK as sitk
 from scipy.ndimage import distance_transform_edt
 from skimage import measure
 
-from medsam2_seed_test import prepare_case, segment, dice
+from medsam2_seed_test import prepare_case, segment, dice, slice_areas
 
 AIR_HU = -500.0  # below this HU is air — never tumour, safe to delete
 
@@ -101,7 +101,7 @@ def main():
 
     # good-conditions seeds: the largest-area slices, lightly jittered (in production these
     # are the annotator's slices; here we stand them in from the OAR GT)
-    areas = ctx.gt_full.reshape(ctx.gt_full.shape[0], -1).sum(1)
+    areas = slice_areas(ctx.gt_full)
     zs = np.where(areas > 0)[0]
     slices = zs[np.argsort(areas[zs])[::-1][:a.ensemble]]
     masks = [segment(ctx, int(z), "mask", shift=a.jitter, rng=np.random.RandomState(100 + k))

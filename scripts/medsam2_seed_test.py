@@ -133,11 +133,17 @@ def to_model_input(vol_u8):
     return (t - mean) / std
 
 
+def slice_areas(mask):
+    """Per-axial-slice foreground voxel count (area). Shared by seed-slice selection
+    (largest-area slice) here and the triage ensemble's top-N seed pick."""
+    return mask.reshape(mask.shape[0], -1).sum(axis=1)
+
+
 def pick_seed_slice(mask_arr, override):
     """Default seed = the mandible's largest-area axial slice (the center-outward
     anchor the literature says is most stable). --seed-slice forces an off-centre
     seed to observe drift (experiment C)."""
-    areas = mask_arr.reshape(mask_arr.shape[0], -1).sum(axis=1)
+    areas = slice_areas(mask_arr)
     if override is not None:
         if not (0 <= override < mask_arr.shape[0]) or areas[override] == 0:
             raise SystemExit(f"--seed-slice {override} has no mandible (areas nonzero "

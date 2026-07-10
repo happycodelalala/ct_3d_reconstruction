@@ -120,6 +120,15 @@ Deep read of `medsam2_seed_test.py`'s engine (`prepare_case`/`segment`/`propagat
 
 - [x] **Largest-connected-component logic duplicated across 3 files. — FIXED.** `measure.label` + argmax-of-component-sizes appeared in `medsam2.largest_cc`, `build_envelope.body_mask` (inline), and `preprocess_hn.propagate_intensity` (a `sizes[0]=0; argmax` variant — same result). **A cross-file sweep caught the latter two**, not the first pass. Extracted `asset_common.largest_cc` (pure numpy/skimage, reuses its existing `measure` import); all three now share it, and `build_envelope`'s now-dead `from skimage import measure` was removed. Verified byte-identical envelope rebuild (body mesh + seg volume); medsam2/preprocess_hn are behavior-identical by construction. `triage.largest_cc_fraction` stays (it needs the counts for a *fraction*, not the mask).
 
+## Triage pipeline internals review (2026-07-09)
+
+Deep read of `triage_pipeline.py`. **Correct** — verified `recall_safe_envelopes` (EDT of `~consensus` thresholded `<= r` = spacing-aware dilation; the bbox restriction with a `ceil(rmax/spacing)+1` margin fully contains the dilation, so it loses nothing), the air-prune precedence + grid-shape alignment (`ct_vol` is on the envelope's grid, available even in `mr` modality), the majority vote, and `recall_precision`'s empty guards.
+
+- [x] **`slice_areas` duplicated. — FIXED.** The per-axial-slice area `mask.reshape(mask.shape[0], -1).sum(1)` was inlined in `medsam2.pick_seed_slice` and `triage.main`. Extracted `medsam2_seed_test.slice_areas`; both share it. py_compile green.
+
+- [ ] **(P3, design nuance) `coherence` is measured on the *dilated envelope*, not the consensus.** The fragmentation signal (`largest_cc_fraction`, doc §5 "propagation broke up") runs on the `+dilate-mm` envelope, where dilation has already merged fragments closer than ~2·radius — so it under-detects the small fragmentation the *consensus* would show. **Not changed:** it alters the measured pipeline's routing and needs GPU re-measurement on real data. Consider measuring coherence on the pre-dilation `consensus` for a signal that matches the stated intent.
+  - **Refs:** `scripts/triage_pipeline.py:119`.
+
 ## Done in this review (2026-07-09)
 
 Doc inaccuracies found by adversarial verification against the code and already corrected:
